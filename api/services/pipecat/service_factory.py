@@ -1,5 +1,5 @@
 from functools import wraps
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode, urlparse, urlunparse
 
 import aiohttp
@@ -95,6 +95,13 @@ from pipecat.services.speechmatics.stt import (
     SpeechmaticsSTTSettings,
 )
 from pipecat.services.xai.tts import XAITTSService, XAIWebsocketTTSSettings
+from pipecat.services.fish.tts import FishAudioTTSService, FishAudioTTSSettings
+from pipecat.services.soniox.tts import SonioxTTSService, SonioxTTSSettings
+
+try:
+    from pipecat_rumik import RumikTTSService
+except ImportError:
+    RumikTTSService = None  # type: ignore[assignment,misc]
 from pipecat.transcriptions.language import Language
 from pipecat.utils.text.xml_function_tag_filter import XMLFunctionTagFilter
 
@@ -909,6 +916,77 @@ def create_tts_service(
                 language=pipecat_language,
                 model=model,
             ),
+            text_filters=[xml_function_tag_filter],
+            skip_aggregator_types=["recording_router", "recording"],
+            silence_time_s=1.0,
+        )
+    elif user_config.tts.provider == ServiceProviders.RUMIK.value:
+        if RumikTTSService is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Rumik AI TTS requires the pipecat-rumik package. Install with: pip install pipecat-rumik",
+            )
+        voice = getattr(user_config.tts, "voice", None)
+        model = getattr(user_config.tts, "model", None) or "muga"
+        language_code = getattr(user_config.tts, "language", None)
+        gateway_url = getattr(user_config.tts, "base_url", None)
+        if not gateway_url:
+            raise HTTPException(
+                status_code=400, detail="Rumik AI requires a base_url (gateway URL)."
+            )
+        settings_kwargs: dict[str, Any] = {"model": model}
+        if voice:
+            settings_kwargs["voice"] = voice
+        if language_code:
+            settings_kwargs["language"] = language_code
+        return RumikTTSService(
+            api_key=user_config.tts.api_key,
+            gateway_url=gateway_url,
+            settings=RumikTTSService.Settings(**settings_kwargs),
+            text_filters=[xml_function_tag_filter],
+            skip_aggregator_types=["recording_router", "recording"],
+            silence_time_s=1.0,
+        )
+    elif user_config.tts.provider == ServiceProviders.SONIOX.value:
+        voice = getattr(user_config.tts, "voice", None) or "Bryce"
+        model = getattr(user_config.tts, "model", None) or "tts-rt-v2"
+        language_code = getattr(user_config.tts, "language", None) or "en"
+        speed = getattr(user_config.tts, "speed", None)
+        try:
+            pipecat_language = Language(language_code)
+        except ValueError:
+            pipecat_language = Language.EN
+        settings_kwargs_soniox: dict[str, Any] = {
+            "voice": voice,
+            "model": model,
+            "language": pipecat_language,
+        }
+        if speed is not None:
+            settings_kwargs_soniox["speed"] = speed
+        return SonioxTTSService(
+            api_key=user_config.tts.api_key,
+            settings=SonioxTTSSettings(**settings_kwargs_soniox),
+            text_filters=[xml_function_tag_filter],
+            skip_aggregator_types=["recording_router", "recording"],
+            silence_time_s=1.0,
+        )
+    elif user_config.tts.provider == ServiceProviders.FISHAUDIO.value:
+        model = getattr(user_config.tts, "model", None) or "s2.1-pro"
+        voice = getattr(user_config.tts, "voice", None)
+        language_code = getattr(user_config.tts, "language", None)
+        latency = getattr(user_config.tts, "latency", None) or "balanced"
+        settings_kwargs_fish: dict[str, Any] = {
+            "model": model,
+            "latency": latency,
+        }
+        if voice:
+            settings_kwargs_fish["voice"] = voice
+        if language_code:
+            settings_kwargs_fish["language"] = language_code
+        return FishAudioTTSService(
+            api_key=user_config.tts.api_key,
+            output_format="pcm",
+            settings=FishAudioTTSSettings(**settings_kwargs_fish),
             text_filters=[xml_function_tag_filter],
             skip_aggregator_types=["recording_router", "recording"],
             silence_time_s=1.0,

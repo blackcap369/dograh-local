@@ -99,6 +99,9 @@ class ServiceProviders(str, Enum):
     SMALLEST = "smallest"
     XAI = "xai"
     LMNT = "lmnt"
+    RUMIK = "rumik"
+    SONIOX = "soniox"
+    FISHAUDIO = "fishaudio"
 
 
 class BaseServiceConfiguration(BaseModel):
@@ -133,6 +136,9 @@ class BaseServiceConfiguration(BaseModel):
         ServiceProviders.SMALLEST,
         ServiceProviders.XAI,
         ServiceProviders.LMNT,
+        ServiceProviders.RUMIK,
+        ServiceProviders.SONIOX,
+        ServiceProviders.FISHAUDIO,
     ]
     api_key: str | list[str]
 
@@ -317,6 +323,21 @@ ELEVENLABS_PROVIDER_MODEL_CONFIG = provider_model_config("ElevenLabs")
 CARTESIA_PROVIDER_MODEL_CONFIG = provider_model_config("Cartesia")
 XAI_PROVIDER_MODEL_CONFIG = provider_model_config("xAI")
 LMNT_PROVIDER_MODEL_CONFIG = provider_model_config("LMNT")
+RUMIK_PROVIDER_MODEL_CONFIG = provider_model_config(
+    "Rumik AI",
+    description="Rumik AI real-time TTS with expressive voice synthesis.",
+    provider_docs_url="https://rumik.ai",
+)
+SONIOX_PROVIDER_MODEL_CONFIG = provider_model_config(
+    "Soniox",
+    description="Soniox real-time streaming TTS with word-level timestamps.",
+    provider_docs_url="https://soniox.com/docs",
+)
+FISHAUDIO_PROVIDER_MODEL_CONFIG = provider_model_config(
+    "Fish Audio",
+    description="Fish Audio streaming TTS with custom voice cloning support.",
+    provider_docs_url="https://fish.audio",
+)
 INWORLD_PROVIDER_MODEL_CONFIG = provider_model_config(
     "Inworld",
     description=(
@@ -1585,6 +1606,88 @@ class LmntTTSConfiguration(BaseTTSConfiguration):
     )
 
 
+RUMIK_TTS_MODELS = ["muga", "mulberry"]
+
+
+@register_tts
+class RumikTTSConfiguration(BaseTTSConfiguration):
+    model_config = RUMIK_PROVIDER_MODEL_CONFIG
+    provider: Literal[ServiceProviders.RUMIK] = ServiceProviders.RUMIK
+    model: str = Field(
+        default="muga",
+        description="Rumik TTS model. 'muga' is the default; 'mulberry' supports expressive voice descriptions.",
+        json_schema_extra={"examples": RUMIK_TTS_MODELS},
+    )
+    voice: str | None = Field(
+        default=None,
+        description="Rumik speaker voice ID (e.g. 'speaker_1').",
+        json_schema_extra={"allow_custom_input": True},
+    )
+    base_url: str = Field(
+        description="Rumik gateway WebSocket URL.",
+    )
+    language: str | None = Field(
+        default=None,
+        description="Language code for synthesis (reserved for provider compatibility).",
+        json_schema_extra={"allow_custom_input": True},
+    )
+
+
+@register_tts
+class SonioxTTSConfiguration(BaseTTSConfiguration):
+    model_config = SONIOX_PROVIDER_MODEL_CONFIG
+    provider: Literal[ServiceProviders.SONIOX] = ServiceProviders.SONIOX
+    model: str = Field(
+        default="tts-rt-v2",
+        description="Soniox TTS model.",
+    )
+    voice: str = Field(
+        default="Bryce",
+        description="Soniox voice name (e.g. 'Bryce', 'Adrian').",
+        json_schema_extra={"allow_custom_input": True},
+    )
+    language: str = Field(
+        default="en",
+        description="BCP-47 language code for synthesis.",
+        json_schema_extra={"allow_custom_input": True},
+    )
+    speed: float | None = Field(
+        default=None,
+        ge=0.7,
+        le=1.3,
+        description="Speech rate multiplier (0.7 to 1.3). None uses server default.",
+    )
+
+
+FISHAUDIO_TTS_MODELS = ["s2.1-pro", "s2-pro", "s1"]
+
+
+@register_tts
+class FishAudioTTSConfiguration(BaseTTSConfiguration):
+    model_config = FISHAUDIO_PROVIDER_MODEL_CONFIG
+    provider: Literal[ServiceProviders.FISHAUDIO] = ServiceProviders.FISHAUDIO
+    model: str = Field(
+        default="s2.1-pro",
+        description="Fish Audio TTS model.",
+        json_schema_extra={"examples": FISHAUDIO_TTS_MODELS},
+    )
+    voice: str | None = Field(
+        default=None,
+        description="Fish Audio voice model reference_id. Create voices at fish.audio.",
+        json_schema_extra={"allow_custom_input": True},
+    )
+    language: str | None = Field(
+        default=None,
+        description="Language code for synthesis.",
+        json_schema_extra={"allow_custom_input": True},
+    )
+    latency: str = Field(
+        default="balanced",
+        description="Latency mode: 'balanced' (lowest TTFA) or 'normal'.",
+        json_schema_extra={"examples": ["balanced", "normal"]},
+    )
+
+
 TTSConfig = Annotated[
     Union[
         DeepgramTTSConfiguration,
@@ -1603,6 +1706,9 @@ TTSConfig = Annotated[
         SmallestAITTSConfiguration,
         XAITTSConfiguration,
         LmntTTSConfiguration,
+        RumikTTSConfiguration,
+        SonioxTTSConfiguration,
+        FishAudioTTSConfiguration,
     ],
     Field(discriminator="provider"),
 ]
