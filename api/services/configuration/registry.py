@@ -1659,7 +1659,7 @@ class SonioxTTSConfiguration(BaseTTSConfiguration):
     )
 
 
-FISHAUDIO_TTS_MODELS = ["s2.1-pro", "s2-pro", "s1"]
+FISHAUDIO_TTS_MODELS = ["s2.1-pro", "s2.1-pro-free", "s2-pro", "s1"]
 
 
 @register_tts

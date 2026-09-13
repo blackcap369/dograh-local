@@ -82,18 +82,31 @@ from pipecat.services.openai.stt import (
 from pipecat.services.openai.tts import OpenAITTSService, OpenAITTSSettings
 from pipecat.services.openrouter.llm import OpenRouterLLMService, OpenRouterLLMSettings
 from pipecat.services.rime.tts import RimeTTSService, RimeTTSSettings
-from pipecat.services.sarvam.llm import SarvamLLMService, SarvamLLMSettings
-from pipecat.services.sarvam.stt import SarvamSTTService, SarvamSTTSettings
-from pipecat.services.sarvam.tts import SarvamTTSService, SarvamTTSSettings
+try:
+    from pipecat.services.sarvam.llm import SarvamLLMService, SarvamLLMSettings
+except ImportError:
+    SarvamLLMService = None  # type: ignore[assignment,misc]
+try:
+    from pipecat.services.sarvam.stt import SarvamSTTService, SarvamSTTSettings
+except ImportError:
+    SarvamSTTService = None  # type: ignore[assignment,misc]
+try:
+    from pipecat.services.sarvam.tts import SarvamTTSService, SarvamTTSSettings
+except ImportError:
+    SarvamTTSService = None  # type: ignore[assignment,misc]
 from pipecat.services.smallest.stt import SmallestSTTService, SmallestSTTSettings
 from pipecat.services.smallest.tts import SmallestTTSService, SmallestTTSSettings
 from pipecat.services.speaches.llm import SpeachesLLMService, SpeachesLLMSettings
 from pipecat.services.speaches.stt import SpeachesSTTService, SpeachesSTTSettings
 from pipecat.services.speaches.tts import SpeachesTTSService, SpeachesTTSSettings
-from pipecat.services.speechmatics.stt import (
-    SpeechmaticsSTTService,
-    SpeechmaticsSTTSettings,
-)
+try:
+    from pipecat.services.speechmatics.stt import (
+        SpeechmaticsSTTService,
+        SpeechmaticsSTTSettings,
+    )
+except ImportError:
+    SpeechmaticsSTTService = None  # type: ignore[assignment,misc]
+    SpeechmaticsSTTSettings = None  # type: ignore[assignment,misc]
 from pipecat.services.xai.tts import XAITTSService, XAIWebsocketTTSSettings
 from pipecat.services.fish.tts import FishAudioTTSService, FishAudioTTSSettings
 from pipecat.services.soniox.tts import SonioxTTSService, SonioxTTSSettings
