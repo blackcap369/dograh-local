@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.services.auth.depends import get_user
-from api.routes import organization, workflow, credentials, tool, telephony, campaign, knowledge_base, user
+from api.routes import organization, workflow, credentials, tool, telephony, campaign, knowledge_base, user, auth
 
 
 # =============================================================================
@@ -276,6 +276,135 @@ class TestOrganizationEndpointsIsolation:
         data = response.json()
         assert data["organization_id"] == ORG_A_ID
         assert data["organization_id"] != ORG_B_ID
+
+
+# =============================================================================
+# Test: Organization Display Name
+# =============================================================================
+
+class TestOrganizationName:
+    """`organizations.name` is the user-facing label for a client organization.
+
+    Before this column existed the only identifier was `provider_id`, an opaque
+    machine string (`org_oss_1756200000_ab12cd34`). The sidebar rendered that
+    directly, so an agency operator saw ids instead of client names.
+    """
+
+    @pytest.mark.asyncio
+    async def test_mine_returns_org_name(self):
+        """GET /organizations/mine surfaces the display name alongside the id."""
+        app = _make_org_app(USER_A1_ID, ORG_A_ID, USER_A1_PROVIDER)
+        client = TestClient(app)
+
+        org_a = SimpleNamespace(
+            id=ORG_A_ID, provider_id=ORG_A_PROVIDER, name="Acme Corp"
+        )
+
+        with patch("api.routes.organization.db_client") as mock_db:
+            mock_db.get_organizations_for_user = AsyncMock(return_value=[org_a])
+
+            response = client.get("/api/v1/organizations/mine")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "Acme Corp"
+        assert data[0]["id"] == ORG_A_ID
+        assert data[0]["provider_id"] == ORG_A_PROVIDER
+
+    @pytest.mark.asyncio
+    async def test_mine_tolerates_org_without_a_name(self):
+        """An org with no name still lists, with `name: null` rather than a 500.
+
+        The column is nullable, and pre-existing rows are backfilled by migration
+        -- but a row created through any path that predates the backfill, or by a
+        caller that passes no name, must not break the switcher.
+        """
+        app = _make_org_app(USER_A1_ID, ORG_A_ID, USER_A1_PROVIDER)
+        client = TestClient(app)
+
+        # No `name` attribute at all -- matches an ORM row from a stale model.
+        org_legacy = SimpleNamespace(id=ORG_A_ID, provider_id=ORG_A_PROVIDER)
+
+        with patch("api.routes.organization.db_client") as mock_db:
+            mock_db.get_organizations_for_user = AsyncMock(return_value=[org_legacy])
+
+            response = client.get("/api/v1/organizations/mine")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["name"] is None
+        # The switcher falls back to provider_id, so it must still be present.
+        assert data[0]["provider_id"] == ORG_A_PROVIDER
+
+    @pytest.mark.asyncio
+    async def test_mine_does_not_leak_name_across_tenants(self):
+        """Only the caller's own orgs are named in the response."""
+        app = _make_org_app(USER_A1_ID, ORG_A_ID, USER_A1_PROVIDER)
+        client = TestClient(app)
+
+        org_a = SimpleNamespace(
+            id=ORG_A_ID, provider_id=ORG_A_PROVIDER, name="Acme Corp"
+        )
+        org_b = SimpleNamespace(
+            id=ORG_B_ID, provider_id=ORG_B_PROVIDER, name="Globex"
+        )
+
+        with patch("api.routes.organization.db_client") as mock_db:
+            mock_db.get_organizations_for_user = AsyncMock(return_value=[org_a])
+
+            response = client.get("/api/v1/organizations/mine")
+
+        assert response.status_code == 200
+        names = {o["name"] for o in response.json()}
+        assert names == {"Acme Corp"}
+        assert "Globex" not in names
+
+    @pytest.mark.asyncio
+    async def test_signup_creates_org_with_the_supplied_name(self):
+        """The signup form's name seeds the org, not just the user."""
+        app = FastAPI()
+        app.include_router(auth.router, prefix="/api/v1")
+        client = TestClient(app)
+
+        created_user = SimpleNamespace(
+            id=USER_A1_ID,
+            provider_id=USER_A1_PROVIDER,
+            email="owner@acme-corp.com",
+        )
+        created_org = SimpleNamespace(id=ORG_A_ID, provider_id=ORG_A_PROVIDER)
+
+        with (
+            patch("api.routes.auth.ENABLE_SIGNUP", True),
+            patch("api.routes.auth.db_client") as mock_db,
+            patch("api.routes.auth.ensure_organization_bootstrapped", new=AsyncMock()),
+        ):
+            mock_db.get_user_by_email = AsyncMock(return_value=None)
+            mock_db.create_user_with_email = AsyncMock(return_value=created_user)
+            mock_db.get_or_create_organization_by_provider_id = AsyncMock(
+                return_value=(created_org, True)
+            )
+            mock_db.add_user_to_organization = AsyncMock()
+            mock_db.update_user_selected_organization = AsyncMock()
+
+            response = client.post(
+                "/api/v1/auth/signup",
+                json={
+                    "email": "owner@acme-corp.com",
+                    "password": "correct-horse-battery-staple",
+                    "name": "Acme Corp",
+                },
+            )
+
+        assert response.status_code in (200, 201), response.text
+        _, kwargs = (
+            mock_db.get_or_create_organization_by_provider_id.await_args
+        )
+        assert kwargs.get("name") == "Acme Corp", (
+            "signup must pass the submitted name through to the org, otherwise the "
+            "sidebar falls back to the opaque provider_id forever"
+        )
 
 
 # =============================================================================
