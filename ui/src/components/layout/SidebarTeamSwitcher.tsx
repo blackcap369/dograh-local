@@ -115,6 +115,11 @@ function LocalTeamSwitcher({
   const activeOrganization = organizations.find(
     (org) => org.id === currentOrganizationId
   );
+  // Prefer the human label. `name` is null for orgs created before the column
+  // existed, and the Stack auth path may not supply one, so provider_id stays
+  // as the fallback rather than rendering a blank row.
+  const labelFor = (org: { name?: string | null; provider_id: string }) =>
+    org.name ?? org.provider_id;
 
   return (
     <div className="relative">
@@ -133,16 +138,16 @@ function LocalTeamSwitcher({
             {currentOrganizationId === null && <option value="">Select an organization</option>}
             {organizations.map((org) => (
               <option key={org.id} value={org.id}>
-                {org.provider_id}
+                {labelFor(org)}
               </option>
             ))}
           </select>
         ) : (
           <span
             className="min-w-0 flex-1 truncate text-foreground"
-            title={activeOrganization?.provider_id}
+            title={activeOrganization ? labelFor(activeOrganization) : undefined}
           >
-            {activeOrganization?.provider_id ?? "Unknown"}
+            {activeOrganization ? labelFor(activeOrganization) : "Unknown"}
           </span>
         )}
       </div>

@@ -62,6 +62,15 @@ async def get_user(
     if not selected_team_id and stack_user.get("selected_team"):
         selected_team_id = stack_user["selected_team"].get("id")
 
+    # Best-effort display label for the org. Absent in some Stack responses, in
+    # which case the column stays NULL and the UI falls back to the team id.
+    # Snapshot only: a later rename in Stack must not silently rewrite it here,
+    # which the ON CONFLICT path in get_or_create_organization_by_provider_id
+    # guarantees.
+    selected_team_name: str | None = (stack_user.get("selected_team") or {}).get(
+        "name"
+    )
+
     if not selected_team_id:
         raise HTTPException(status_code=400, detail="No team selected")
 
@@ -105,7 +114,9 @@ async def get_user(
             organization,
             org_was_created,
         ) = await db_client.get_or_create_organization_by_provider_id(
-            org_provider_id=selected_team_id, user_id=user_model.id
+            org_provider_id=selected_team_id,
+            user_id=user_model.id,
+            name=selected_team_name,
         )
         if org_was_created:
             _sync_created_organization_to_posthog(

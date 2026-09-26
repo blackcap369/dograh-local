@@ -657,7 +657,13 @@ export type ByokPipelineAiModelConfiguration = {
         provider: 'xai';
     } & XaittsConfiguration) | ({
         provider: 'lmnt';
-    } & LmntTtsConfiguration);
+    } & LmntTtsConfiguration) | ({
+        provider: 'rumik';
+    } & RumikTtsConfiguration) | ({
+        provider: 'soniox';
+    } & SonioxTtsConfiguration) | ({
+        provider: 'fishaudio';
+    } & FishAudioTtsConfiguration);
     /**
      * Stt
      */
@@ -2684,6 +2690,44 @@ export type EndTextChatSessionRequest = {
 };
 
 /**
+ * ExotelConfigurationRequest
+ */
+export type ExotelConfigurationRequest = {
+    /**
+     * Provider
+     */
+    provider?: 'exotel';
+    /**
+     * Account Sid
+     *
+     * Exotel Account SID
+     */
+    account_sid: string;
+    /**
+     * Api Key
+     *
+     * Exotel API Key
+     */
+    api_key: string;
+    /**
+     * Api Token
+     *
+     * Exotel API Token
+     */
+    api_token: string;
+    /**
+     * Api Base Url
+     *
+     * Exotel API base URL. Use https://api.in.exotel.com for India or https://api.exotel.com for other regions.
+     */
+    api_base_url?: string;
+    /**
+     * From Numbers
+     */
+    from_numbers?: Array<string>;
+};
+
+/**
  * ExternalPBXFieldMapping
  *
  * Map one gathered-context value to a provider-native field.
@@ -2739,6 +2783,46 @@ export type FileMetadataResponse = {
     metadata: {
         [key: string]: unknown;
     } | null;
+};
+
+/**
+ * Fish Audio
+ *
+ * Fish Audio streaming TTS with custom voice cloning support.
+ */
+export type FishAudioTtsConfiguration = {
+    /**
+     * Provider
+     */
+    provider?: 'fishaudio';
+    /**
+     * Api Key
+     */
+    api_key: string | Array<string>;
+    /**
+     * Model
+     *
+     * Fish Audio TTS model.
+     */
+    model?: string;
+    /**
+     * Voice
+     *
+     * Fish Audio voice model reference_id. Create voices at fish.audio.
+     */
+    voice?: string | null;
+    /**
+     * Language
+     *
+     * Language code for synthesis.
+     */
+    language?: string | null;
+    /**
+     * Latency
+     *
+     * Latency mode: 'balanced' (lowest TTFA) or 'normal'.
+     */
+    latency?: string;
 };
 
 /**
@@ -4450,21 +4534,6 @@ export type OrganizationAiModelConfigurationV2 = {
 };
 
 /**
- * OrganizationListItem
- */
-export type OrganizationListItem = {
-    id: number;
-    provider_id: string;
-};
-
-/**
- * OrganizationSwitchRequest
- */
-export type OrganizationSwitchRequest = {
-    organization_id: number;
-};
-
-/**
  * OrganizationContextResponse
  */
 export type OrganizationContextResponse = {
@@ -4477,6 +4546,24 @@ export type OrganizationContextResponse = {
      */
     organization_provider_id?: string | null;
     model_services: OrganizationModelServicesContext;
+};
+
+/**
+ * OrganizationListItem
+ */
+export type OrganizationListItem = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Provider Id
+     */
+    provider_id: string;
+    /**
+     * Name
+     */
+    name?: string | null;
 };
 
 /**
@@ -4529,6 +4616,22 @@ export type OrganizationPreferences = {
     disposition_mapping?: {
         [key: string]: string;
     };
+};
+
+/**
+ * OrganizationSwitchRequest
+ *
+ * Body for selecting the caller's active organization.
+ *
+ * `organization_id` is the local integer primary key, matching the `id` returned by
+ * GET /organizations/mine -- it is never trusted on its own to imply membership; the
+ * switch endpoint re-checks the association table before writing.
+ */
+export type OrganizationSwitchRequest = {
+    /**
+     * Organization Id
+     */
+    organization_id: number;
 };
 
 /**
@@ -5404,6 +5507,46 @@ export type RimeTtsConfiguration = {
 };
 
 /**
+ * Rumik AI
+ *
+ * Rumik AI real-time TTS with expressive voice synthesis.
+ */
+export type RumikTtsConfiguration = {
+    /**
+     * Provider
+     */
+    provider?: 'rumik';
+    /**
+     * Api Key
+     */
+    api_key: string | Array<string>;
+    /**
+     * Model
+     *
+     * Rumik TTS model. 'muga' is the default; 'mulberry' supports expressive voice descriptions.
+     */
+    model?: string;
+    /**
+     * Voice
+     *
+     * Rumik speaker voice ID (e.g. 'speaker_1').
+     */
+    voice?: string | null;
+    /**
+     * Base Url
+     *
+     * Rumik gateway WebSocket URL.
+     */
+    base_url: string;
+    /**
+     * Language
+     *
+     * Language code for synthesis (reserved for provider compatibility).
+     */
+    language?: string | null;
+};
+
+/**
  * S3SignedUrlResponse
  */
 export type S3SignedUrlResponse = {
@@ -5764,6 +5907,46 @@ export type SmallestAittsConfiguration = {
 };
 
 /**
+ * Soniox
+ *
+ * Soniox real-time streaming TTS with word-level timestamps.
+ */
+export type SonioxTtsConfiguration = {
+    /**
+     * Provider
+     */
+    provider?: 'soniox';
+    /**
+     * Api Key
+     */
+    api_key: string | Array<string>;
+    /**
+     * Model
+     *
+     * Soniox TTS model.
+     */
+    model?: string;
+    /**
+     * Voice
+     *
+     * Soniox voice name (e.g. 'Bryce', 'Adrian').
+     */
+    voice?: string;
+    /**
+     * Language
+     *
+     * BCP-47 language code for synthesis.
+     */
+    language?: string;
+    /**
+     * Speed
+     *
+     * Speech rate multiplier (0.7 to 1.3). None uses server default.
+     */
+    speed?: number | null;
+};
+
+/**
  * Local Models (Speaches)
  *
  * Self-hosted OpenAI-compatible local models. See the Speaches project for setup and supported backends.
@@ -6048,6 +6231,8 @@ export type TelephonyConfigurationCreateRequest = {
     } & AriConfigurationRequest) | ({
         provider: 'cloudonix';
     } & CloudonixConfigurationRequest) | ({
+        provider: 'exotel';
+    } & ExotelConfigurationRequest) | ({
         provider: 'plivo';
     } & PlivoConfigurationRequest) | ({
         provider: 'telnyx';
@@ -6212,6 +6397,8 @@ export type TelephonyConfigurationUpdateRequest = {
     } & AriConfigurationRequest) | ({
         provider: 'cloudonix';
     } & CloudonixConfigurationRequest) | ({
+        provider: 'exotel';
+    } & ExotelConfigurationRequest) | ({
         provider: 'plivo';
     } & PlivoConfigurationRequest) | ({
         provider: 'telnyx';
@@ -8246,6 +8433,27 @@ export type HandleInboundRunApiV1TelephonyInboundRunPostResponses = {
     200: unknown;
 };
 
+export type HandleInboundRunApiV1TelephonyInboundRunPost2Data = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/telephony/inbound/run';
+};
+
+export type HandleInboundRunApiV1TelephonyInboundRunPost2Errors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+};
+
+export type HandleInboundRunApiV1TelephonyInboundRunPost2Responses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type HandleInboundFallbackApiV1TelephonyInboundFallbackPostData = {
     body?: never;
     path?: never;
@@ -8410,6 +8618,38 @@ export type HandleCloudonixCdrApiV1TelephonyCloudonixCdrPostErrors = {
 };
 
 export type HandleCloudonixCdrApiV1TelephonyCloudonixCdrPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type HandleExotelStatusCallbackApiV1TelephonyExotelStatusCallbackWorkflowRunIdPostData = {
+    body?: never;
+    path: {
+        /**
+         * Workflow Run Id
+         */
+        workflow_run_id: number;
+    };
+    query?: never;
+    url: '/api/v1/telephony/exotel/status-callback/{workflow_run_id}';
+};
+
+export type HandleExotelStatusCallbackApiV1TelephonyExotelStatusCallbackWorkflowRunIdPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type HandleExotelStatusCallbackApiV1TelephonyExotelStatusCallbackWorkflowRunIdPostError = HandleExotelStatusCallbackApiV1TelephonyExotelStatusCallbackWorkflowRunIdPostErrors[keyof HandleExotelStatusCallbackApiV1TelephonyExotelStatusCallbackWorkflowRunIdPostErrors];
+
+export type HandleExotelStatusCallbackApiV1TelephonyExotelStatusCallbackWorkflowRunIdPostResponses = {
     /**
      * Successful Response
      */
@@ -11725,6 +11965,8 @@ export type GetMyOrganizationsApiV1OrganizationsMineGetError = GetMyOrganization
 
 export type GetMyOrganizationsApiV1OrganizationsMineGetResponses = {
     /**
+     * Response Get My Organizations Api V1 Organizations Mine Get
+     *
      * Successful Response
      */
     200: Array<OrganizationListItem>;
@@ -11758,10 +12000,6 @@ export type SwitchOrganizationApiV1OrganizationsSwitchPostErrors = {
      * Validation Error
      */
     422: HttpValidationError;
-    /**
-     * Forbidden
-     */
-    403: unknown;
 };
 
 export type SwitchOrganizationApiV1OrganizationsSwitchPostError = SwitchOrganizationApiV1OrganizationsSwitchPostErrors[keyof SwitchOrganizationApiV1OrganizationsSwitchPostErrors];

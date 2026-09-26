@@ -41,7 +41,11 @@ async def signup(request: SignupRequest):
     # Create organization for the user
     org_provider_id = f"org_{user.provider_id}"
     organization, _ = await db_client.get_or_create_organization_by_provider_id(
-        org_provider_id=org_provider_id, user_id=user.id
+        org_provider_id=org_provider_id,
+        user_id=user.id,
+        # The signup form asks for a name; seed the org with it so the sidebar has
+        # something to show. Falls back to NULL (and provider_id) when omitted.
+        name=request.name,
     )
 
     # Link user to organization

@@ -107,6 +107,10 @@ class OrganizationModel(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     provider_id = Column(String, unique=True, index=True, nullable=False)
+    # Human-facing client label, e.g. "Acme Corp". Nullable on purpose: the column
+    # post-dates every org created before the backfill, and provider_id remains the
+    # only identifier some call paths (Stack auth) have. Callers fall back to it.
+    name = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     # Deprecated: MPS owns quota and credit ledger state.

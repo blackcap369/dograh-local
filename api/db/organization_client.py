@@ -43,9 +43,14 @@ class OrganizationClient(BaseDBClient):
             return list(result.scalars().all())
 
     async def get_or_create_organization_by_provider_id(
-        self, org_provider_id: str, user_id: int
+        self, org_provider_id: str, user_id: int, name: str | None = None
     ) -> tuple[OrganizationModel, bool]:
         """Get an existing organization by provider_id or create a new one.
+
+        `name` is the human-facing client label. It is only applied when this call
+        actually inserts the row: the ON CONFLICT path returns the pre-existing org
+        untouched, so a later login never silently renames a client. Callers that
+        pass no name leave the column NULL and the UI falls back to provider_id.
 
         Returns:
             A tuple of (organization, was_created) where was_created is True if the organization
@@ -65,7 +70,9 @@ class OrganizationClient(BaseDBClient):
                 # This is atomic and handles race conditions at the database level
 
                 stmt = insert(OrganizationModel.__table__).values(
-                    provider_id=org_provider_id, created_at=datetime.now(timezone.utc)
+                    provider_id=org_provider_id,
+                    name=name,
+                    created_at=datetime.now(timezone.utc),
                 )
                 # ON CONFLICT DO NOTHING - if another request already inserted, this becomes a no-op
                 stmt = stmt.on_conflict_do_nothing(index_elements=["provider_id"])

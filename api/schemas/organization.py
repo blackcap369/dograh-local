@@ -4,6 +4,10 @@ from pydantic import BaseModel
 class OrganizationListItem(BaseModel):
     id: int
     provider_id: str
+    # Display label, e.g. "Acme Corp". Defaults to None so an org row that predates
+    # the column -- or a caller that supplied no name -- still serializes, with the
+    # UI falling back to provider_id.
+    name: str | None = None
 
 
 class OrganizationSwitchRequest(BaseModel):

@@ -234,7 +234,14 @@ async def get_current_organization_context(user: UserModel = Depends(get_user)):
 async def get_my_organizations(user: UserModel = Depends(get_user)):
     """Return all organizations the user belongs to."""
     orgs = await db_client.get_organizations_for_user(user.id)
-    return [OrganizationListItem(id=o.id, provider_id=o.provider_id) for o in orgs]
+    # getattr, not attribute access: an org row written before the `name` column
+    # existed has no such attribute, and the switcher still has to list it.
+    return [
+        OrganizationListItem(
+            id=o.id, provider_id=o.provider_id, name=getattr(o, "name", None)
+        )
+        for o in orgs
+    ]
 
 
 @router.post("/switch", response_model=OrganizationContextResponse)
