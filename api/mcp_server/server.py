@@ -1,4 +1,4 @@
-from fastmcp import FastMCP
+from fastmcp.server.server import FastMCP
 from mcp.types import ToolAnnotations
 
 from api.mcp_server.instructions import DOGRAH_MCP_INSTRUCTIONS

@@ -378,7 +378,7 @@ export function AppSidebar() {
           </SidebarTrigger>
         </div>
 
-        {provider === "stack" && (
+        {(provider === "stack" || provider === "local") && (
           <div className={cn("mt-3 notranslate", isCollapsed && "hidden")} translate="no">
             <SidebarTeamSwitcher />
           </div>

@@ -718,6 +718,13 @@ async def get_workflows(
     Use GET /workflow/fetch/{workflow_id} to get full workflow details.
     """
     statuses = _validate_status_filter(status)
+    if not user.selected_organization_id:
+        # Without this the handler would pass `organization_id=None` to
+        # `get_all_workflows_for_listing`, whose `if organization_id:` guard
+        # adds no WHERE clause for a falsy value — returning every tenant's
+        # workflows instead of none.
+        raise HTTPException(status_code=400, detail="No organization selected")
+
     if statuses:
         # Fetch workflows for each requested status and combine the results.
         all_workflows = []
@@ -1076,6 +1083,14 @@ async def update_workflow(
         HTTPException: If the workflow is not found or if there's a database error
     """
     try:
+        if not user.selected_organization_id:
+            # Every field of UpdateWorkflowRequest is optional, so a body with no
+            # `workflow_definition` skips the `get_workflow` ownership check below.
+            # `update_workflow` is called without a `user_id`, so a falsy org would
+            # leave `WHERE id = <request-supplied id>` with no organization
+            # predicate — letting any tenant rewrite another tenant's agent.
+            raise HTTPException(status_code=400, detail="No organization selected")
+
         # Strip UI runtime-only fields (invalid, validationMessage, etc.) from
         # node.data / edge.data before anything touches the DB — the UI sends
         # nodes wholesale from the React Flow store, which carries those.
@@ -1447,6 +1462,11 @@ async def create_workflow_run(
 async def get_workflow_run(
     workflow_id: int, run_id: int, user: UserModel = Depends(get_user)
 ) -> WorkflowRunResponseSchema:
+    if not user.selected_organization_id:
+        # See `get_workflows` — an unscoped `None` here drops the org predicate
+        # entirely and would serve another tenant's run, recordings and transcript.
+        raise HTTPException(status_code=400, detail="No organization selected")
+
     run = await db_client.get_workflow_run(
         run_id, organization_id=user.selected_organization_id
     )
@@ -1554,6 +1574,11 @@ async def get_workflow_runs(
                 raise HTTPException(
                     status_code=403, detail=f"Invalid attribute '{attribute}'"
                 )
+
+    if not user.selected_organization_id:
+        # See `get_workflows` — without the org id this becomes a bare
+        # `workflow_id` lookup that can return another tenant's runs.
+        raise HTTPException(status_code=400, detail="No organization selected")
 
     runs, total_count = await db_client.get_workflow_runs_by_workflow_id(
         workflow_id,

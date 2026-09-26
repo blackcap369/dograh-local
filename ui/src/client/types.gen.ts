@@ -4450,6 +4450,21 @@ export type OrganizationAiModelConfigurationV2 = {
 };
 
 /**
+ * OrganizationListItem
+ */
+export type OrganizationListItem = {
+    id: number;
+    provider_id: string;
+};
+
+/**
+ * OrganizationSwitchRequest
+ */
+export type OrganizationSwitchRequest = {
+    organization_id: number;
+};
+
+/**
  * OrganizationContextResponse
  */
 export type OrganizationContextResponse = {
@@ -11677,6 +11692,88 @@ export type GetCurrentOrganizationContextApiV1OrganizationsContextGetResponses =
 };
 
 export type GetCurrentOrganizationContextApiV1OrganizationsContextGetResponse = GetCurrentOrganizationContextApiV1OrganizationsContextGetResponses[keyof GetCurrentOrganizationContextApiV1OrganizationsContextGetResponses];
+
+export type GetMyOrganizationsApiV1OrganizationsMineGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/organizations/mine';
+};
+
+export type GetMyOrganizationsApiV1OrganizationsMineGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetMyOrganizationsApiV1OrganizationsMineGetError = GetMyOrganizationsApiV1OrganizationsMineGetErrors[keyof GetMyOrganizationsApiV1OrganizationsMineGetErrors];
+
+export type GetMyOrganizationsApiV1OrganizationsMineGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Array<OrganizationListItem>;
+};
+
+export type GetMyOrganizationsApiV1OrganizationsMineGetResponse = GetMyOrganizationsApiV1OrganizationsMineGetResponses[keyof GetMyOrganizationsApiV1OrganizationsMineGetResponses];
+
+export type SwitchOrganizationApiV1OrganizationsSwitchPostData = {
+    body: OrganizationSwitchRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/organizations/switch';
+};
+
+export type SwitchOrganizationApiV1OrganizationsSwitchPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type SwitchOrganizationApiV1OrganizationsSwitchPostError = SwitchOrganizationApiV1OrganizationsSwitchPostErrors[keyof SwitchOrganizationApiV1OrganizationsSwitchPostErrors];
+
+export type SwitchOrganizationApiV1OrganizationsSwitchPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: OrganizationContextResponse;
+};
+
+export type SwitchOrganizationApiV1OrganizationsSwitchPostResponse = SwitchOrganizationApiV1OrganizationsSwitchPostResponses[keyof SwitchOrganizationApiV1OrganizationsSwitchPostResponses];
 
 export type GetTelephonyProvidersMetadataApiV1OrganizationsTelephonyProvidersMetadataGetData = {
     body?: never;

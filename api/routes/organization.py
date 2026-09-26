@@ -6,12 +6,13 @@ from loguru import logger
 from pydantic import BaseModel, Field, ValidationError
 
 from api.constants import (
+    AUTH_PROVIDER,
     DEFAULT_CAMPAIGN_RETRY_CONFIG,
     DEFAULT_ORG_CONCURRENCY_LIMIT,
     DEPLOYMENT_MODE,
 )
 from api.db import db_client
-from api.db.models import UserModel
+from api.db.models import OrganizationModel, UserModel
 from api.db.telephony_configuration_client import (
     TelephonyConfigurationConflictError,
     TelephonyConfigurationInUseError,
@@ -31,6 +32,7 @@ from api.schemas.ai_model_configuration import (
     OrganizationAIModelConfigurationResponse,
     OrganizationAIModelConfigurationV2,
 )
+from api.schemas.organization import OrganizationListItem, OrganizationSwitchRequest
 from api.schemas.organization_preferences import OrganizationPreferences
 from api.schemas.telephony_config import (
     TelephonyConfigRequest,
@@ -79,6 +81,7 @@ from api.services.configuration.registry import (
 )
 from api.services.mps_billing import ensure_hosted_mps_billing_account_v2
 from api.services.mps_service_key_client import mps_service_key_client
+from api.services.organization_bootstrap import ensure_organization_bootstrapped
 from api.services.organization_context import (
     OrganizationContextResponse,
     get_organization_context,
@@ -224,6 +227,61 @@ class ModelConfigurationPricingResponse(BaseModel):
 @router.get("/context", response_model=OrganizationContextResponse)
 async def get_current_organization_context(user: UserModel = Depends(get_user)):
     """Return organization-scoped configuration signals owned by Dograh."""
+    return await get_organization_context(user)
+
+
+@router.get("/mine", response_model=List[OrganizationListItem])
+async def get_my_organizations(user: UserModel = Depends(get_user)):
+    """Return all organizations the user belongs to."""
+    orgs = await db_client.get_organizations_for_user(user.id)
+    return [OrganizationListItem(id=o.id, provider_id=o.provider_id) for o in orgs]
+
+
+@router.post("/switch", response_model=OrganizationContextResponse)
+async def switch_organization(
+    request: OrganizationSwitchRequest,
+    user: UserModel = Depends(get_user),
+):
+    """Make one of the caller's own organizations the active one.
+
+    Local auth only. Under the Stack provider the active team is owned by Stack Auth
+    (`selected_team_id`), and `get_user` re-asserts that selection on every request --
+    so honoring a write here would be silently undone on the next request. The UI
+    drives Stack through Stack's own `user.setSelectedTeam` instead.
+
+    A single-column write to `users.selected_organization_id` is sufficient and needs
+    no new token: `_handle_oss_auth` re-reads the user row on every request, so the
+    new value is in force from the next call onward.
+
+    Auth uses `get_user`, not `get_user_with_selected_organization`, so a user who
+    currently has no organization selected can still select one.
+    """
+    if AUTH_PROVIDER != "local":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    organization = await db_client.get_organization_by_id(request.organization_id)
+    if not organization:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    # The id came from the request body, so it proves nothing about membership on its
+    # own. Re-derive the caller's organizations and require the target to be among
+    # them; without this the endpoint is a cross-tenant escalation primitive.
+    memberships = await db_client.get_organizations_for_user(user.id)
+    if not any(org.id == organization.id for org in memberships):
+        raise HTTPException(
+            status_code=403, detail="You do not have access to that organization"
+        )
+
+    await db_client.update_user_selected_organization(user.id, organization.id)
+    user.selected_organization_id = organization.id
+
+    # Provisioning is keyed on whether the target org is actually configured, not on
+    # whether this request created it, so switching into a not-yet-provisioned org
+    # self-heals the same way a retried bootstrap does.
+    await ensure_organization_bootstrapped(
+        organization.id, created_by=user.provider_id
+    )
+
     return await get_organization_context(user)
 
 

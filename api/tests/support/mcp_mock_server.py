@@ -13,7 +13,7 @@ from typing import AsyncIterator
 
 import httpx
 import uvicorn
-from fastmcp import FastMCP
+from fastmcp.server.server import FastMCP
 from starlette.responses import JSONResponse
 
 

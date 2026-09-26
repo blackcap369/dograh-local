@@ -225,6 +225,12 @@ class WorkflowRunClient(BaseDBClient):
                     WorkflowModel.user_id == user_id,
                 )
             else:
+                # Unscoped lookup: only call this with a run_id the caller already
+                # owns. This branch is load-bearing for in-flight call processing
+                # (telephony providers, run_pipeline, quota_service) which
+                # legitimately holds a run_id without an org. User-facing routes
+                # MUST pass organization_id and reject an unset one — see
+                # routes/workflow.py `get_workflow_run`.
                 query = query.where(WorkflowRunModel.id == run_id)
 
             result = await session.execute(query)
@@ -297,7 +303,7 @@ class WorkflowRunClient(BaseDBClient):
                 .where(WorkflowRunModel.workflow_id == workflow_id)
             )
 
-            if organization_id:
+            if organization_id is not None:
                 # Filter by organization_id when provided
                 base_query = base_query.where(
                     WorkflowModel.organization_id == organization_id
@@ -305,6 +311,12 @@ class WorkflowRunClient(BaseDBClient):
             elif user_id:
                 # Fallback to user_id for backwards compatibility
                 base_query = base_query.where(WorkflowModel.user_id == user_id)
+            else:
+                # Scoping is mandatory. `elif user_id:` falling through leaves a
+                # bare `workflow_id` lookup, which can return another tenant's
+                # call runs. Real runs are org-stamped, so this returns only
+                # genuinely org-less rows rather than every tenant's.
+                base_query = base_query.where(WorkflowModel.organization_id.is_(None))
 
             # Apply filters
             base_query = apply_workflow_run_filters(base_query, filters)

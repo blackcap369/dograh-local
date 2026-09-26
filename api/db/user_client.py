@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from typing import List
 
 from loguru import logger
 from pydantic import ValidationError
@@ -8,7 +9,12 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.future import select
 
 from api.db.base_client import BaseDBClient
-from api.db.models import UserConfigurationModel, UserModel
+from api.db.models import (
+    UserConfigurationModel,
+    UserModel,
+    OrganizationModel,
+    organization_users_association,
+)
 from api.enums import UserConfigurationKey
 from api.schemas.ai_model_configuration import EffectiveAIModelConfiguration
 
@@ -219,3 +225,24 @@ class UserClient(BaseDBClient):
             await session.commit()
             await session.refresh(user)
             return user
+
+    async def get_organizations_for_user(
+        self, user_id: int
+    ) -> List[OrganizationModel]:
+        """Return all organizations the user belongs to."""
+        from sqlalchemy import select as sa_select
+
+        async with self.async_session() as session:
+            result = await session.execute(
+                sa_select(OrganizationModel)
+                .join(
+                    organization_users_association,
+                    OrganizationModel.id
+                    == organization_users_association.c.organization_id,
+                )
+                .where(
+                    organization_users_association.c.user_id == user_id
+                )
+                .order_by(OrganizationModel.id)
+            )
+            return list(result.scalars().all())
