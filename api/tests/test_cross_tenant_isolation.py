@@ -1236,3 +1236,346 @@ class TestAuthPathParity:
             )
 
         assert response.status_code == 403
+
+
+# =============================================================================
+# Test: Organization Creation ("New Business")
+# =============================================================================
+
+NEW_ORG_ID = 900
+NEW_ORG_PROVIDER = "org_local_10_deadbeef"
+
+
+def _make_create_app(user_id: int, org_id: int, provider_id: str) -> FastAPI:
+    """App for org-creation, with the caller maybe already inside an organization.
+
+    Identical to `_make_org_app` in construction; a separate name only because
+    creation is the one org route that must also work for a user with no organization
+    at all, so `org_id` is passed as None in that case.
+    """
+    app = FastAPI()
+    app.include_router(organization.router, prefix="/api/v1")
+    app.dependency_overrides[get_user] = lambda: SimpleNamespace(
+        id=user_id,
+        provider_id=provider_id,
+        selected_organization_id=org_id,
+    )
+    return app
+
+
+class TestOrganizationCreation:
+    """`POST /organizations` is how an agency onboards client #2, #3, ... .
+
+    Until it existed, the only org-creating calls in the repo were signup (id =
+    `org_{user.provider_id}`, and a duplicate email 409s) and the dead Stack path. So
+    onboarding a second client meant signing up with a second email address -- a second
+    *user* who is not a member of the first business and who cannot be added to it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_create_organization_returns_the_new_org(self):
+        """The endpoint echoes the org it just created, name included.
+
+        Returning the row (rather than a bare 201) is what lets the switcher add the
+        option immediately without a second round trip.
+        """
+        app = _make_create_app(USER_A1_ID, ORG_A_ID, USER_A1_PROVIDER)
+        client = TestClient(app)
+
+        created = SimpleNamespace(
+            id=NEW_ORG_ID, provider_id=NEW_ORG_PROVIDER, name="Globex"
+        )
+
+        with patch("api.routes.organization.db_client") as mock_db:
+            mock_db.create_organization = AsyncMock(return_value=created)
+            mock_db.add_user_to_organization = AsyncMock()
+
+            response = client.post("/api/v1/organizations", json={"name": "Globex"})
+
+        assert response.status_code in (200, 201), response.text
+        data = response.json()
+        assert data["id"] == NEW_ORG_ID
+        assert data["name"] == "Globex"
+        assert data["provider_id"] == NEW_ORG_PROVIDER
+
+    @pytest.mark.asyncio
+    async def test_creator_is_added_as_a_member(self):
+        """The creator must be a member of the org they just made.
+
+        Without the membership row the new org would not appear in GET
+        /organizations/mine, so the switcher could never offer it -- the create would
+        look like it silently did nothing.
+        """
+        app = _make_create_app(USER_A1_ID, ORG_A_ID, USER_A1_PROVIDER)
+        client = TestClient(app)
+
+        created = SimpleNamespace(
+            id=NEW_ORG_ID, provider_id=NEW_ORG_PROVIDER, name="Globex"
+        )
+
+        with patch("api.routes.organization.db_client") as mock_db:
+            mock_db.create_organization = AsyncMock(return_value=created)
+            mock_db.add_user_to_organization = AsyncMock()
+
+            client.post("/api/v1/organizations", json={"name": "Globex"})
+
+            mock_db.add_user_to_organization.assert_awaited_once_with(
+                USER_A1_ID, NEW_ORG_ID
+            )
+
+    @pytest.mark.asyncio
+    async def test_new_org_appears_in_mine(self):
+        """End-to-end of the two halves: create, then list."""
+        app = _make_create_app(USER_A1_ID, ORG_A_ID, USER_A1_PROVIDER)
+        client = TestClient(app)
+
+        created = SimpleNamespace(
+            id=NEW_ORG_ID, provider_id=NEW_ORG_PROVIDER, name="Globex"
+        )
+        org_a = SimpleNamespace(
+            id=ORG_A_ID, provider_id=ORG_A_PROVIDER, name="Acme Corp"
+        )
+
+        with patch("api.routes.organization.db_client") as mock_db:
+            mock_db.create_organization = AsyncMock(return_value=created)
+            mock_db.add_user_to_organization = AsyncMock()
+            mock_db.get_organizations_for_user = AsyncMock(
+                return_value=[org_a, created]
+            )
+
+            create_response = client.post(
+                "/api/v1/organizations", json={"name": "Globex"}
+            )
+            mine_response = client.get("/api/v1/organizations/mine")
+
+        assert create_response.status_code in (200, 201)
+        assert mine_response.status_code == 200
+        assert {o["id"] for o in mine_response.json()} == {ORG_A_ID, NEW_ORG_ID}
+
+    @pytest.mark.asyncio
+    async def test_provider_id_is_minted_server_side_not_taken_from_body(self):
+        """The caller cannot choose the lookup key.
+
+        `provider_id` is the only key organizations are looked up by, so a
+        request-supplied value would let one tenant collide with, or impersonate,
+        another's org. It is generated here and the body is name-only.
+        """
+        app = _make_create_app(USER_A1_ID, ORG_A_ID, USER_A1_PROVIDER)
+        client = TestClient(app)
+
+        created = SimpleNamespace(
+            id=NEW_ORG_ID, provider_id=NEW_ORG_PROVIDER, name="Globex"
+        )
+
+        with patch("api.routes.organization.db_client") as mock_db:
+            mock_db.create_organization = AsyncMock(return_value=created)
+            mock_db.add_user_to_organization = AsyncMock()
+
+            response = client.post(
+                "/api/v1/organizations",
+                json={"name": "Globex", "provider_id": ORG_B_PROVIDER},
+            )
+
+        assert response.status_code in (200, 201), response.text
+        _, kwargs = mock_db.create_organization.await_args
+        assert kwargs.get("provider_id") != ORG_B_PROVIDER, (
+            "a caller-supplied provider_id would collide with another tenant's org"
+        )
+        assert str(kwargs.get("provider_id", "")).startswith("org_local_")
+
+    @pytest.mark.asyncio
+    async def test_two_creates_yield_two_distinct_orgs(self):
+        """One user holds many businesses, so the id cannot be user-derived.
+
+        Signup's `org_{user.provider_id}` is 1:1 with a user and would collide the
+        moment the same user created a second business. This is the regression guard
+        for that.
+        """
+        app = _make_create_app(USER_A1_ID, ORG_A_ID, USER_A1_PROVIDER)
+        client = TestClient(app)
+
+        with patch("api.routes.organization.db_client") as mock_db:
+            mock_db.create_organization = AsyncMock(
+                side_effect=[
+                    SimpleNamespace(
+                        id=900, provider_id="org_local_10_aaaaaaaa", name="A"
+                    ),
+                    SimpleNamespace(
+                        id=901, provider_id="org_local_10_bbbbbbbb", name="B"
+                    ),
+                ]
+            )
+            mock_db.add_user_to_organization = AsyncMock()
+
+            first = client.post("/api/v1/organizations", json={"name": "A"})
+            second = client.post("/api/v1/organizations", json={"name": "B"})
+
+        assert first.status_code in (200, 201), first.text
+        assert second.status_code in (200, 201), second.text
+        assert first.json()["id"] != second.json()["id"]
+        assert first.json()["provider_id"] != second.json()["provider_id"]
+
+        minted = [
+            c.kwargs.get("provider_id")
+            for c in mock_db.create_organization.await_args_list
+        ]
+        assert len(set(minted)) == 2, (
+            f"both creates minted the same provider_id {minted} -- the second would "
+            "silently return the first business instead of creating a new one"
+        )
+
+    @pytest.mark.asyncio
+    async def test_create_does_not_switch_the_active_organization(self):
+        """Creating client #3 while working in #1 must not yank you into #3.
+
+        An auto-switch would silently change every org-scoped query the page makes
+        next, so an agent created moments later would land in the wrong business. The
+        dropdown should simply gain an option.
+        """
+        app = _make_create_app(USER_A1_ID, ORG_A_ID, USER_A1_PROVIDER)
+        client = TestClient(app)
+
+        created = SimpleNamespace(
+            id=NEW_ORG_ID, provider_id=NEW_ORG_PROVIDER, name="Globex"
+        )
+
+        with patch("api.routes.organization.db_client") as mock_db:
+            mock_db.create_organization = AsyncMock(return_value=created)
+            mock_db.add_user_to_organization = AsyncMock()
+            mock_db.update_user_selected_organization = AsyncMock()
+
+            response = client.post("/api/v1/organizations", json={"name": "Globex"})
+
+            mock_db.update_user_selected_organization.assert_not_awaited()
+
+        assert response.status_code in (200, 201), response.text
+
+    @pytest.mark.asyncio
+    async def test_create_mints_no_api_key(self):
+        """A new business starts with zero API keys.
+
+        Org creation used to auto-mint a "Default API Key" whose raw value is stored
+        only as a hash and is therefore shown to nobody -- an unusable secret that
+        cannot be recovered. At onboarding volume (one per client) that is a key per
+        business nobody can ever read back. Keys are created explicitly on the
+        Developers page instead.
+        """
+        app = _make_create_app(USER_A1_ID, ORG_A_ID, USER_A1_PROVIDER)
+        client = TestClient(app)
+
+        created = SimpleNamespace(
+            id=NEW_ORG_ID, provider_id=NEW_ORG_PROVIDER, name="Globex"
+        )
+
+        with patch("api.routes.organization.db_client") as mock_db:
+            mock_db.create_organization = AsyncMock(return_value=created)
+            mock_db.add_user_to_organization = AsyncMock()
+
+            response = client.post("/api/v1/organizations", json={"name": "Globex"})
+
+            # The status assertion is what makes this test non-vacuous: without the
+            # route, `assert_not_called` would pass against a router that does nothing
+            # at all, which is exactly the failure this test exists to rule out.
+            assert response.status_code in (200, 201), response.text
+            mock_db.create_api_key.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_create_works_with_no_organization_selected(self):
+        """A user with no business can still create their first one.
+
+        This is why the route takes `get_user` and not
+        `get_user_with_selected_organization`, which 400s on a null selection.
+        """
+        app = _make_create_app(USER_A1_ID, None, USER_A1_PROVIDER)
+        client = TestClient(app)
+
+        created = SimpleNamespace(
+            id=NEW_ORG_ID, provider_id=NEW_ORG_PROVIDER, name="Globex"
+        )
+
+        with patch("api.routes.organization.db_client") as mock_db:
+            mock_db.create_organization = AsyncMock(return_value=created)
+            mock_db.add_user_to_organization = AsyncMock()
+
+            response = client.post("/api/v1/organizations", json={"name": "Globex"})
+
+        assert response.status_code in (200, 201), response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad_name", ["", "   ", "x" * 101])
+    async def test_blank_whitespace_and_oversized_names_are_rejected(self, bad_name):
+        """The label is the only thing distinguishing clients in a dropdown.
+
+        An empty row or a one-character row is unusable, and there is no server-side
+        cap on the column, so the bound is enforced here.
+        """
+        app = _make_create_app(USER_A1_ID, ORG_A_ID, USER_A1_PROVIDER)
+        client = TestClient(app)
+
+        with patch("api.routes.organization.db_client") as mock_db:
+            mock_db.create_organization = AsyncMock()
+            mock_db.add_user_to_organization = AsyncMock()
+
+            response = client.post("/api/v1/organizations", json={"name": bad_name})
+
+        assert response.status_code in (400, 422), response.text
+        mock_db.create_organization.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_name_is_required(self):
+        """A missing name is a validation error, not a nameless org."""
+        app = _make_create_app(USER_A1_ID, ORG_A_ID, USER_A1_PROVIDER)
+        client = TestClient(app)
+
+        with patch("api.routes.organization.db_client") as mock_db:
+            mock_db.create_organization = AsyncMock()
+            mock_db.add_user_to_organization = AsyncMock()
+
+            response = client.post("/api/v1/organizations", json={})
+
+        assert response.status_code in (400, 422), response.text
+        mock_db.create_organization.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_create_is_404_under_non_local_auth(self):
+        """Under Stack auth the active team is owned by Stack, not by us.
+
+        Mirrors the gate on POST /switch: an org created here would not be the
+        org `get_user` resolves to, so the write would be invisible. 404 rather than
+        403 so the route does not advertise itself in a deployment that cannot use it.
+        """
+        app = _make_create_app(USER_A1_ID, ORG_A_ID, USER_A1_PROVIDER)
+        client = TestClient(app)
+
+        created = SimpleNamespace(
+            id=NEW_ORG_ID, provider_id=NEW_ORG_PROVIDER, name="Globex"
+        )
+
+        with (
+            patch("api.routes.organization.AUTH_PROVIDER", "stack"),
+            patch("api.routes.organization.db_client") as mock_db,
+        ):
+            mock_db.create_organization = AsyncMock(return_value=created)
+            mock_db.add_user_to_organization = AsyncMock()
+
+            gated = client.post("/api/v1/organizations", json={"name": "Globex"})
+
+        assert gated.status_code == 404
+        mock_db.create_organization.assert_not_awaited()
+
+        # Same app, same body, local auth: proves the 404 above came from the gate
+        # rather than the route simply not existing -- which would also be a 404, and
+        # would make this test pass against an implementation that is never mounted.
+        with (
+            patch("api.routes.organization.AUTH_PROVIDER", "local"),
+            patch("api.routes.organization.db_client") as mock_db,
+        ):
+            mock_db.create_organization = AsyncMock(return_value=created)
+            mock_db.add_user_to_organization = AsyncMock()
+
+            allowed = client.post("/api/v1/organizations", json={"name": "Globex"})
+
+        assert allowed.status_code in (200, 201), (
+            f"under local auth the same request must succeed; got {allowed.status_code} "
+            "-- the 404 above may just be a missing route"
+        )
