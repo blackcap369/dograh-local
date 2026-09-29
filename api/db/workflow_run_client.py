@@ -180,7 +180,14 @@ class WorkflowRunClient(BaseDBClient):
                         "user_id": run.workflow.user_id if run.workflow else None,
                         "organization_id": organization.id if organization else None,
                         "organization_name": (
-                            organization.provider_id if organization else None
+                            # `name` is nullable: it post-dates the backfill, and
+                            # orgs created by the Stack auth path never set it. Fall
+                            # back rather than showing the operator a null column.
+                            (
+                                organization.name or organization.provider_id
+                                if organization
+                                else None
+                            )
                         ),
                         "mode": run.mode,
                         "is_completed": run.is_completed,
