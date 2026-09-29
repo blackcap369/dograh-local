@@ -3,7 +3,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 import { client } from '@/client/client.gen';
-import { getCurrentOrganizationContextApiV1OrganizationsContextGet, getMyOrganizationsApiV1OrganizationsMineGet, getPreferencesApiV1OrganizationsPreferencesGet, getUserConfigurationsApiV1UserConfigurationsUserGet, switchOrganizationApiV1OrganizationsSwitchPost } from '@/client/sdk.gen';
+import { createOrganizationApiV1OrganizationsPost,getCurrentOrganizationContextApiV1OrganizationsContextGet, getMyOrganizationsApiV1OrganizationsMineGet, getPreferencesApiV1OrganizationsPreferencesGet, getUserConfigurationsApiV1UserConfigurationsUserGet, switchOrganizationApiV1OrganizationsSwitchPost } from '@/client/sdk.gen';
 import type { OrganizationContextResponse, OrganizationListItem, OrganizationPreferences, UserConfigurationRequestResponseSchema } from '@/client/types.gen';
 import { setupAuthInterceptor } from '@/lib/apiClient';
 import { detailFromError } from '@/lib/apiError';
@@ -33,6 +33,7 @@ interface OrgConfigContextType {
     externalPbxIntegrationsEnabled: boolean;
     organizations: OrganizationListItem[];
     switchOrganization: (id: number) => Promise<void>;
+    createOrganization: (name: string) => Promise<OrganizationListItem>;
 }
 
 const OrgConfigContext = createContext<OrgConfigContextType | null>(null);
@@ -172,11 +173,26 @@ export function OrgConfigProvider({ children }: { children: ReactNode }) {
         await fetchConfig();
     }, [fetchConfig]);
 
-    const refreshConfig = useCallback(async () => {
+    const createOrganization = useCallback(async (name: string) => {
+        const response = await createOrganizationApiV1OrganizationsPost({
+            body: { name },
+        });
+
+        if (response.error || !response.data) {
+            throw new Error(detailFromError(response.error, 'Failed to create organization'));
+        }
+
+        // Refresh rather than appending locally: the switcher reads its options from
+        // `organizations`, and a stale list here is what makes a freshly created
+        // business look like the create silently did nothing.
         await fetchConfig();
+
+        return response.data;
     }, [fetchConfig]);
 
-    return (
+    const refreshConfig = useCallback(async () => {
+        await fetchConfig();
+    }, [fetchConfig]);    return (
         <OrgConfigContext.Provider
             value={{
                 orgContext,
@@ -192,6 +208,7 @@ export function OrgConfigProvider({ children }: { children: ReactNode }) {
                     organizationPreferences?.external_pbx_integrations_enabled ?? false,
                 organizations,
                 switchOrganization,
+                createOrganization,
             }}
         >
             {children}

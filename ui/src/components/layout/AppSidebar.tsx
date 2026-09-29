@@ -16,6 +16,7 @@ import {
   type LucideIcon,
   Megaphone,
   Phone,
+  Plus,
   Settings,
   TrendingUp,
   UserRound,
@@ -66,6 +67,10 @@ type SidebarNavItem = {
   url: string;
   icon: LucideIcon;
   showsTelephonyWarning?: boolean;
+  // Hidden for every provider except `local`. The org-creation endpoint answers 404
+  // under any other provider (it is a local-auth-only path), so a nav entry that is
+  // still visible there would lead to a form that can only ever fail.
+  localOnly?: boolean;
 };
 
 type SidebarNavSection = {
@@ -148,6 +153,17 @@ const NAV_SECTIONS: SidebarNavSection[] = [
         title: "Reports",
         url: "/reports",
         icon: FileText,
+      },
+      {
+        // A dedicated entry as well as the sidebar switcher's own button. That
+        // switcher is hidden on the auth screens, on a collapsed desktop rail, and
+        // wherever the provider gate in this file excludes it -- so without this
+        // entry the only way to onboard a client would be to already be logged in
+        // and looking at the right screen.
+        title: "New Business",
+        url: "/organizations/new",
+        icon: Plus,
+        localOnly: true,
       }
     ],
   },
@@ -386,31 +402,41 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className={cn("notranslate", isCollapsed && "px-0")} translate="no">
-        {NAV_SECTIONS.map((section, index) => (
-          <SidebarGroup
-            key={section.label ?? "overview"}
-            className={index === 0 ? "mt-2" : "mt-6"}
-          >
-            {section.label && (
-              <SidebarGroupLabel
-                className={cn(
-                  "notranslate text-xs font-semibold uppercase tracking-wider text-muted-foreground",
-                  isCollapsed && "hidden"
-                )}
-                translate="no"
-              >
-                {section.label}
-              </SidebarGroupLabel>
-            )}
-            <SidebarMenu>
-              {section.items.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarLink item={item} />
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroup>
-        ))}
+        {NAV_SECTIONS.map((section, index) => {
+          const visibleItems = section.items.filter(
+            (item) => !item.localOnly || provider === "local"
+          );
+          // A group can be emptied entirely by the provider filter above; rendering
+          // its label with nothing under it would leave a stray "MANAGE" heading.
+          if (visibleItems.length === 0) {
+            return null;
+          }
+          return (
+            <SidebarGroup
+              key={section.label ?? "overview"}
+              className={index === 0 ? "mt-2" : "mt-6"}
+            >
+              {section.label && (
+                <SidebarGroupLabel
+                  className={cn(
+                    "notranslate text-xs font-semibold uppercase tracking-wider text-muted-foreground",
+                    isCollapsed && "hidden"
+                  )}
+                  translate="no"
+                >
+                  {section.label}
+                </SidebarGroupLabel>
+              )}
+              <SidebarMenu>
+                {visibleItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarLink item={item} />
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroup>
+          );
+        })}
       </SidebarContent>
 
       <SidebarFooter

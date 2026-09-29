@@ -4549,6 +4549,24 @@ export type OrganizationContextResponse = {
 };
 
 /**
+ * OrganizationCreateRequest
+ *
+ * Body for creating a new business.
+ *
+ * Name only, deliberately. `provider_id` is the sole key organizations are looked up
+ * by, so accepting one from a caller would let a tenant collide with or impersonate
+ * another -- it is minted server-side instead.
+ */
+export type OrganizationCreateRequest = {
+    /**
+     * Name
+     *
+     * Human-facing client label, e.g. 'Acme Corp'.
+     */
+    name: string;
+};
+
+/**
  * OrganizationListItem
  */
 export type OrganizationListItem = {
@@ -11973,6 +11991,45 @@ export type GetMyOrganizationsApiV1OrganizationsMineGetResponses = {
 };
 
 export type GetMyOrganizationsApiV1OrganizationsMineGetResponse = GetMyOrganizationsApiV1OrganizationsMineGetResponses[keyof GetMyOrganizationsApiV1OrganizationsMineGetResponses];
+
+export type CreateOrganizationApiV1OrganizationsPostData = {
+    body: OrganizationCreateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/organizations';
+};
+
+export type CreateOrganizationApiV1OrganizationsPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateOrganizationApiV1OrganizationsPostError = CreateOrganizationApiV1OrganizationsPostErrors[keyof CreateOrganizationApiV1OrganizationsPostErrors];
+
+export type CreateOrganizationApiV1OrganizationsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: OrganizationListItem;
+};
+
+export type CreateOrganizationApiV1OrganizationsPostResponse = CreateOrganizationApiV1OrganizationsPostResponses[keyof CreateOrganizationApiV1OrganizationsPostResponses];
 
 export type SwitchOrganizationApiV1OrganizationsSwitchPostData = {
     body: OrganizationSwitchRequest;
