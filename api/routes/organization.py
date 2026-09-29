@@ -1,5 +1,6 @@
 from copy import deepcopy
 from typing import Any, List, Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
@@ -32,7 +33,11 @@ from api.schemas.ai_model_configuration import (
     OrganizationAIModelConfigurationResponse,
     OrganizationAIModelConfigurationV2,
 )
-from api.schemas.organization import OrganizationListItem, OrganizationSwitchRequest
+from api.schemas.organization import (
+    OrganizationCreateRequest,
+    OrganizationListItem,
+    OrganizationSwitchRequest,
+)
 from api.schemas.organization_preferences import OrganizationPreferences
 from api.schemas.telephony_config import (
     TelephonyConfigRequest,
@@ -242,6 +247,54 @@ async def get_my_organizations(user: UserModel = Depends(get_user)):
         )
         for o in orgs
     ]
+
+
+@router.post("", response_model=OrganizationListItem, status_code=201)
+async def create_organization(
+    request: OrganizationCreateRequest,
+    user: UserModel = Depends(get_user),
+):
+    """Create a new business for the caller and make them a member of it.
+
+    This is the "New Business" button. Until it existed, the only org-creating calls
+    were signup -- which 409s on a duplicate email and keys the id 1:1 to a user -- and
+    the Stack bootstrap, which is unreachable while AUTH_PROVIDER is "local". So
+    onboarding a second client meant signing up with a second email address, producing
+    a second *user* who is not a member of the first business and cannot be added to it.
+
+    `provider_id` is minted here, never taken from the body: it is the only key
+    organizations are looked up by, so a caller-supplied value would be a
+    cross-tenant collision and impersonation primitive. The user id is embedded for
+    traceability but the random suffix is what makes it unique -- a user may hold many
+    businesses, which `org_{user.provider_id}` cannot express.
+
+    Auth uses `get_user`, not `get_user_with_selected_organization`, so a user with no
+    business yet can still create their first one.
+
+    Local auth only, mirroring /switch: under Stack the active team is owned by Stack
+    Auth and re-asserted on every request, so an org created here would never be the
+    org `get_user` resolves to. 404 rather than 403 so the route stays unadvertised in
+    deployments that cannot use it.
+    """
+    if AUTH_PROVIDER != "local":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    organization = await db_client.create_organization(
+        name=request.name,
+        provider_id=f"org_local_{user.id}_{uuid4().hex[:8]}",
+    )
+    await db_client.add_user_to_organization(user.id, organization.id)
+
+    # Deliberately no `update_user_selected_organization` here. Creating client #3
+    # while working in #1 must not move the operator: an auto-switch would silently
+    # re-point every org-scoped query the page makes next, so an agent created moments
+    # later would land in the wrong business. The dropdown gains an option instead, and
+    # the user switches deliberately.
+    return OrganizationListItem(
+        id=organization.id,
+        provider_id=organization.provider_id,
+        name=getattr(organization, "name", None),
+    )
 
 
 @router.post("/switch", response_model=OrganizationContextResponse)

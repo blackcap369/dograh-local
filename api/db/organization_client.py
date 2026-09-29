@@ -7,12 +7,10 @@ from sqlalchemy.future import select
 
 from api.db.base_client import BaseDBClient
 from api.db.models import (
-    APIKeyModel,
     OrganizationModel,
     UserModel,
     organization_users_association,
 )
-from api.utils.api_key import generate_api_key
 
 
 class OrganizationClient(BaseDBClient):
@@ -96,25 +94,46 @@ class OrganizationClient(BaseDBClient):
                     error_msg = f"Failed to create or fetch organization with provider_id {org_provider_id}"
                     raise ValueError(error_msg)
 
-                # Only create API key if we actually created the organization
-                if was_created:
-                    # Create a default API key for the new organization
-                    _, key_hash, key_prefix = generate_api_key()
-
-                    api_key = APIKeyModel(
-                        organization_id=organization.id,
-                        name="Default API Key",
-                        key_hash=key_hash,
-                        key_prefix=key_prefix,
-                        is_active=True,
-                        created_by=user_id,
-                    )
-                    session.add(api_key)
-                    await session.commit()
-
                 await session.refresh(organization)
                 return organization, was_created
             return organization, False
+
+    async def create_organization(
+        self, name: str, provider_id: str
+    ) -> OrganizationModel:
+        """Insert a brand-new organization row and return it.
+
+        Distinct from `get_or_create_organization_by_provider_id`, which is a
+        login-time idempotent lookup keyed on a provider id this system does not own.
+        Here the caller supplies a freshly minted `provider_id` and the intent is
+        unconditionally a new row -- there is no "or get" to fall back to, so a
+        collision raises instead of silently returning somebody else's org.
+
+        `provider_id` must be unique. Signup's `org_{user.provider_id}` is 1:1 with a
+        user and cannot express "this user runs several businesses", so ids minted for
+        this path carry the user id for traceability but are made unique by a random
+        suffix.
+
+        Membership is not implied here: the caller pairs this with
+        `add_user_to_organization`, which is already race-safe and is the one place
+        the association table is written.
+
+        No API key is created. An org used to get a "Default API Key" whose raw value
+        is stored only as a hash and is therefore shown to nobody -- an unrecoverable
+        secret that merely *looks* like a credential on the Developers page. Keys are
+        created explicitly, and the raw value is returned to the caller exactly once,
+        at that moment.
+        """
+        async with self.async_session() as session:
+            organization = OrganizationModel(
+                provider_id=provider_id,
+                name=name,
+                created_at=datetime.now(timezone.utc),
+            )
+            session.add(organization)
+            await session.commit()
+            await session.refresh(organization)
+            return organization
 
     async def is_user_member_of_organization(
         self, user_id: int, organization_id: int
