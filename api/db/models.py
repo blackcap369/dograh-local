@@ -111,6 +111,27 @@ class OrganizationModel(Base):
     # post-dates every org created before the backfill, and provider_id remains the
     # only identifier some call paths (Stack auth) have. Callers fall back to it.
     name = Column(String, nullable=True)
+    # Archive = "out of the way", not "gone". An archived business keeps every
+    # agent, call, and recording and comes back intact on unarchive; it is only
+    # hidden from the org switcher and from the agency's Clients list.
+    #
+    # Archive is the safe default action for retiring a client precisely because
+    # the foreign keys into organizations.id are inconsistent: keys, model
+    # configurations, telephony configs, phone numbers, and call records CASCADE
+    # and are destroyed silently, while workflows, folders, campaigns, and the
+    # membership table carry no ondelete at all and either raise or are orphaned.
+    #
+    # server_default is required, unlike the `name` backfill which deliberately
+    # used one instead. `name` was nullable so omitting it was meaningful; here
+    # every row must read as false, and a column added NOT NULL without a default
+    # fails outright against existing rows. It also keeps a raw INSERT that omits
+    # the column landing as "not archived", which is the correct default.
+    archived = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     # Deprecated: MPS owns quota and credit ledger state.

@@ -129,12 +129,23 @@ async def list_agency_clients(
 ):
     """Every active business on the instance, with its resource counts.
 
-    The one deliberately cross-organization query in this fork. Note the archived
-    filter lives in the query (`list_all_organizations`), not here: a client-side
-    `if not o.archived` would still ship the archived business's name over the wire
-    and would silently depend on every caller remembering.
+    The one deliberately cross-organization query in this fork.
+
+    The archived filter is applied twice on purpose, at the query
+    (`list_all_organizations`) and again here. The query filter is the one that
+    matters -- it stops the name ever leaving the database -- and it is pinned
+    separately by `test_mine_asks_the_client_for_unarchived_rows_only`. This
+    second pass is the cheap belt to that pair of braces: an archived business
+    reaching this list would be offered to the operator as somewhere to work,
+    and a retired client's name showing up in a list of live clients is the kind
+    of bug nobody reports until it is expensive. It also keeps this route correct
+    if `list_all_organizations` is ever called with `include_archived=True`.
     """
-    organizations = await db_client.list_all_organizations()
+    organizations = [
+        org
+        for org in await db_client.list_all_organizations()
+        if not getattr(org, "archived", False)
+    ]
     counts = await db_client.get_organization_resource_counts(
         [org.id for org in organizations]
     )

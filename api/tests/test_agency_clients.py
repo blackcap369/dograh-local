@@ -167,6 +167,13 @@ class TestAgencyClientListing:
 
         Initech is archived in the fixture; it must not be offered as a client to
         work on, and its counts must not be fetched at all.
+
+        The mock deliberately returns an archived row so the route is forced to
+        drop it. That is the belt; the braces are the query filter, pinned
+        separately by `test_mine_asks_the_client_for_unarchived_rows_only`. An
+        earlier draft of this test asserted the opposite -- that a route-level
+        filter would "hide a missing WHERE clause" -- which is not a property
+        worth having. Dropping an archived row twice is free; leaking one is not.
         """
         app = _make_agency_app()
         client = TestClient(app)

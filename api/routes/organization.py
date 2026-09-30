@@ -237,8 +237,15 @@ async def get_current_organization_context(user: UserModel = Depends(get_user)):
 
 @router.get("/mine", response_model=List[OrganizationListItem])
 async def get_my_organizations(user: UserModel = Depends(get_user)):
-    """Return all organizations the user belongs to."""
-    orgs = await db_client.get_organizations_for_user(user.id)
+    """Return all organizations the user belongs to, for the switcher.
+
+    `include_archived=False` is passed explicitly rather than left to the default:
+    an archived business is retired and must not reappear in the dropdown, and a
+    test pins this call site so a future edit here cannot quietly drop the filter.
+    """
+    orgs = await db_client.get_organizations_for_user(
+        user.id, include_archived=False
+    )
     # getattr, not attribute access: an org row written before the `name` column
     # existed has no such attribute, and the switcher still has to list it.
     return [

@@ -227,22 +227,32 @@ class UserClient(BaseDBClient):
             return user
 
     async def get_organizations_for_user(
-        self, user_id: int
+        self, user_id: int, include_archived: bool = False
     ) -> List[OrganizationModel]:
-        """Return all organizations the user belongs to."""
+        """Return all organizations the user belongs to.
+
+        Archived organizations are excluded at the query unless asked for. The
+        switcher is the only caller, and an archived business must not reappear in
+        it -- filtering in Python would still pull the name over the wire and leave
+        the rule resting on every caller remembering.
+
+        `include_archived=True` exists for a surface that legitimately needs the
+        retired businesses too. No caller uses it yet; the default is `False` so
+        that a new caller gets the safe behaviour rather than the surprising one.
+        """
         from sqlalchemy import select as sa_select
 
         async with self.async_session() as session:
-            result = await session.execute(
+            query = (
                 sa_select(OrganizationModel)
                 .join(
                     organization_users_association,
                     OrganizationModel.id
                     == organization_users_association.c.organization_id,
                 )
-                .where(
-                    organization_users_association.c.user_id == user_id
-                )
-                .order_by(OrganizationModel.id)
+                .where(organization_users_association.c.user_id == user_id)
             )
+            if not include_archived:
+                query = query.where(OrganizationModel.archived.is_(False))
+            result = await session.execute(query.order_by(OrganizationModel.id))
             return list(result.scalars().all())

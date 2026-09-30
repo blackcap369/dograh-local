@@ -1,14 +1,18 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import exists
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import exists, func, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.future import select
 
 from api.db.base_client import BaseDBClient
 from api.db.models import (
     OrganizationModel,
+    TelephonyPhoneNumberModel,
     UserModel,
+    WorkflowModel,
+    WorkflowRunModel,
     organization_users_association,
 )
 
@@ -174,3 +178,177 @@ class OrganizationClient(BaseDBClient):
 
             await session.execute(stmt)
             await session.commit()
+
+    # =======================================================================
+    # Agency (cross-organization) operations
+    #
+    # Every method below is deliberately unscoped by user. They are reached only
+    # from the Creative Mode router, which is gated on the agency operator. That
+    # is the one place in this fork where a broad read is correct, and it is a
+    # deliberate inversion of the rule every other client here follows -- hence the
+    # banner rather than a passing comment. If roles are ever added, the gate
+    # changes in one place (`require_agency_operator`) and these stay as they are.
+    # =======================================================================
+
+    async def list_all_organizations(
+        self, include_archived: bool = False
+    ) -> list[OrganizationModel]:
+        """Every organization on the instance, oldest first.
+
+        The archived filter lives in the query, not in the caller. Filtering
+        client-side would still ship an archived business's name over the wire and
+        would depend on every caller remembering -- which is precisely how a
+        retired client reappears in the switcher six months later.
+        """
+        async with self.async_session() as session:
+            query = select(OrganizationModel)
+            if not include_archived:
+                query = query.where(OrganizationModel.archived.is_(False))
+            result = await session.execute(query.order_by(OrganizationModel.id))
+            return list(result.scalars().all())
+
+    async def get_organization_resource_counts(
+        self, organization_ids: list[int]
+    ) -> dict[int, dict[str, int]]:
+        """Per-organization counts of the rows that make a delete destructive.
+
+        One grouped query per table rather than a per-organization lookup: the
+        Clients page renders a count for every business at once, and N+1 here is N
+        round-trips on the screen the operator uses most.
+
+        Returns only organizations that have at least one row. Absence means zero --
+        not a failure -- so callers must zero-fill. Getting that backwards would
+        break the page the moment the operator creates their first client, which is
+        the most likely moment anyone is watching.
+
+        `member_count` is reported but is deliberately not a delete blocker. The
+        creator is always a member, so a business with nothing else in it still has
+        one; blocking on it would make every freshly-created business undeletable
+        and the guard useless.
+        """
+        if not organization_ids:
+            # Four queries against an empty IN () is wasted work, and some drivers
+            # reject the empty case outright.
+            return {}
+
+        counts: dict[int, dict[str, int]] = {}
+
+        async with self.async_session() as session:
+            for key, model in (
+                ("workflow_count", WorkflowModel),
+                ("run_count", WorkflowRunModel),
+                ("phone_number_count", TelephonyPhoneNumberModel),
+            ):
+                result = await session.execute(
+                    select(model.organization_id, func.count(model.id))
+                    .where(model.organization_id.in_(organization_ids))
+                    .group_by(model.organization_id)
+                )
+                for org_id, count in result.all():
+                    counts.setdefault(org_id, {})[key] = int(count)
+
+            result = await session.execute(
+                select(
+                    organization_users_association.c.organization_id,
+                    func.count(organization_users_association.c.user_id),
+                )
+                .where(
+                    organization_users_association.c.organization_id.in_(
+                        organization_ids
+                    )
+                )
+                .group_by(organization_users_association.c.organization_id)
+            )
+            for org_id, count in result.all():
+                counts.setdefault(org_id, {})["member_count"] = int(count)
+
+        return counts
+
+    async def rename_organization(
+        self, organization_id: int, *, name: str
+    ) -> Optional[OrganizationModel]:
+        """Set an organization's display label. Never touches `provider_id`.
+
+        `provider_id` is the sole key organizations are looked up by and is stamped
+        onto every workflow, call record, and member selection pointing at this
+        business. Renaming it would break all of them, so it is not a parameter.
+
+        Returns the updated row, or None if the id does not exist.
+        """
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(OrganizationModel).where(OrganizationModel.id == organization_id)
+            )
+            organization = result.scalars().first()
+            if organization is None:
+                return None
+
+            organization.name = name
+            await session.commit()
+            await session.refresh(organization)
+            return organization
+
+    async def set_organization_archived(
+        self, organization_id: int, archived: bool
+    ) -> Optional[OrganizationModel]:
+        """Hide a business from the switcher, or bring it back. Data is untouched.
+
+        Returns the updated row, or None if the id does not exist.
+        """
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(OrganizationModel).where(OrganizationModel.id == organization_id)
+            )
+            organization = result.scalars().first()
+            if organization is None:
+                return None
+
+            organization.archived = archived
+            await session.commit()
+            await session.refresh(organization)
+            return organization
+
+    async def clear_selected_organization_references(
+        self, organization_id: int
+    ) -> None:
+        """Null `users.selected_organization_id` for anyone pointing at this org.
+
+        `selected_organization_id` has no `ondelete`, so a member still standing in
+        this business would abort the delete on a foreign-key violation -- or be left
+        pointing at a row that no longer exists, which turns every subsequent
+        request into a 500. Called before the delete, never after.
+
+        The membership rows in `organization_users` are left alone: they carry no
+        ondelete either, so they survive as orphans rather than blocking. Cleaning
+        them up is not attempted here because an org with no work history and no
+        members selecting it is the only case that reaches a delete at all.
+        """
+        async with self.async_session() as session:
+            await session.execute(
+                update(UserModel)
+                .where(UserModel.selected_organization_id == organization_id)
+                .values(selected_organization_id=None)
+            )
+            await session.commit()
+
+    async def delete_organization(self, organization_id: int) -> bool:
+        """Delete an organization row. Returns False if it was already gone.
+
+        Callers are responsible for the guard. The foreign keys into
+        `organizations.id` are inconsistent -- API keys, model configurations,
+        telephony configurations, phone numbers, and call records CASCADE and are
+        destroyed silently, while workflows, folders, campaigns, and the membership
+        table carry no `ondelete` and will raise -- so a delete issued without the
+        history check can take a client's recordings with it. `agency.py` refuses
+        with a 409 before this is ever reached, and
+        `clear_selected_organization_references` must be called first.
+        """
+        async with self.async_session() as session:
+            result = await session.execute(
+                sa_delete(OrganizationModel).where(
+                    OrganizationModel.id == organization_id
+                )
+            )
+            await session.commit()
+            return result.rowcount > 0
+

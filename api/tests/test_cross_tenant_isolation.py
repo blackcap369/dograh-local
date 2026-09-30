@@ -189,7 +189,13 @@ class TestOrganizationEndpointsIsolation:
         org_ids = {o["id"] for o in data}
         assert org_ids == {ORG_A_ID}, f"Expected only org_a ({ORG_A_ID}), got {org_ids}"
         assert ORG_B_ID not in org_ids
-        mock_db.get_organizations_for_user.assert_awaited_once_with(USER_A1_ID)
+        # The user id stays positional -- that is the isolation guarantee. The
+        # archived filter is passed explicitly rather than left to the default, so
+        # a retired business cannot reappear in the switcher, and it is pinned here
+        # so a later edit to this call site cannot quietly drop it.
+        mock_db.get_organizations_for_user.assert_awaited_once_with(
+            USER_A1_ID, include_archived=False
+        )
 
     @pytest.mark.asyncio
     async def test_switch_to_own_org_succeeds(self):
