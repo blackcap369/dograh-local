@@ -318,16 +318,32 @@ class OrganizationClient(BaseDBClient):
         pointing at a row that no longer exists, which turns every subsequent
         request into a 500. Called before the delete, never after.
 
-        The membership rows in `organization_users` are left alone: they carry no
-        ondelete either, so they survive as orphans rather than blocking. Cleaning
-        them up is not attempted here because an org with no work history and no
-        members selecting it is the only case that reaches a delete at all.
+        The membership rows in `organization_users` are left alone here: they carry
+        no ondelete either, so they survive as orphans rather than blocking. The
+        delete route cleans them up explicitly with `clear_organization_users`
+        before `delete_organization` runs.
         """
         async with self.async_session() as session:
             await session.execute(
                 update(UserModel)
                 .where(UserModel.selected_organization_id == organization_id)
                 .values(selected_organization_id=None)
+            )
+            await session.commit()
+
+    async def clear_organization_users(
+        self, organization_id: int
+    ) -> None:
+        """Remove all user-organization associations for an organization.
+
+        This is used when an organization is deleted and we want to clean up
+        the membership table, since it has no `ondelete` constraint.
+        """
+        async with self.async_session() as session:
+            await session.execute(
+                sa_delete(organization_users_association).where(
+                    organization_users_association.c.organization_id == organization_id
+                )
             )
             await session.commit()
 

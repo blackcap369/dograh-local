@@ -430,6 +430,65 @@ class TestAgencyClientDeleteGuard:
         )
 
     @pytest.mark.asyncio
+    async def test_delete_clears_membership_rows_first(self):
+        """`organization_users` has no `ondelete` either, so its rows block the delete.
+
+        Membership rows left behind after the organization row is gone would point
+        every former member's `/mine` lookup at a business that no longer exists.
+        They must be removed explicitly, before the row itself is deleted.
+        """
+        app = _make_agency_app()
+        client = TestClient(app)
+
+        mock_db = _patched_client()
+        mock_db.get_organization_by_id = AsyncMock(return_value=GLOBEX)
+        mock_db.clear_selected_organization_references = AsyncMock()
+        mock_db.clear_organization_users = AsyncMock()
+        mock_db.delete_organization = AsyncMock(return_value=GLOBEX)
+
+        with patch("api.routes.agency.db_client", mock_db):
+            client.delete(f"/api/v1/agency/clients/{GLOBEX.id}")
+
+        mock_db.clear_organization_users.assert_awaited_once_with(GLOBEX.id)
+
+    @pytest.mark.asyncio
+    async def test_delete_order_is_selection_then_memberships_then_row(self):
+        """Cleanup precedes the delete; the row goes last.
+
+        Membership and selection cleanup both run against rows that reference the
+        organization, so either of them arriving after `delete_organization` would
+        race the foreign keys. The awaited order is the contract.
+        """
+        app = _make_agency_app()
+        client = TestClient(app)
+
+        mock_db = _patched_client()
+        mock_db.get_organization_by_id = AsyncMock(return_value=GLOBEX)
+        mock_db.clear_selected_organization_references = AsyncMock()
+        mock_db.clear_organization_users = AsyncMock()
+        mock_db.delete_organization = AsyncMock(return_value=GLOBEX)
+
+        with patch("api.routes.agency.db_client", mock_db):
+            client.delete(f"/api/v1/agency/clients/{GLOBEX.id}")
+
+        manager = mock_db.mock_calls
+        order = [
+            name.split("/")[-1]
+            for name, _args, _kwargs in manager
+            if name
+            in (
+                "clear_selected_organization_references",
+                "clear_organization_users",
+                "delete_organization",
+            )
+        ]
+        assert order == [
+            "clear_selected_organization_references",
+            "clear_organization_users",
+            "delete_organization",
+        ], f"cleanup steps ran out of order: {order}"
+
+    @pytest.mark.asyncio
     async def test_delete_of_a_missing_business_is_404(self):
         app = _make_agency_app()
         client = TestClient(app)

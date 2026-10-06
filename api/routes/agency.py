@@ -328,6 +328,10 @@ async def delete_agency_client(
     # here would abort the delete on a foreign-key violation -- or leave them
     # pointing at a row that no longer exists. Clear it first.
     await db_client.clear_selected_organization_references(organization.id)
+    # Same story for the membership table: `organization_users` carries no
+    # `ondelete` either, so its rows must go explicitly or they survive as
+    # orphans pointing at a business that no longer exists.
+    await db_client.clear_organization_users(organization.id)
     await db_client.delete_organization(organization.id)
     return None
 
