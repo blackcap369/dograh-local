@@ -79,6 +79,13 @@ class UserModel(Base):
     agency_role = Column(
         String(16), nullable=False, default="staff", server_default=text("'staff'")
     )
+    # Offboarding primitive for staff. Checked on every auth path (login,
+    # token auth, API-key auth), so suspension kills access immediately --
+    # unlike assignment revocation, which existing JWTs would ride out.
+    # Suspended accounts keep their agent history and can be reactivated.
+    is_suspended = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
 
     __table_args__ = (
         Index(
@@ -123,6 +130,53 @@ class StaffClientAssignmentModel(Base):
         ),
         Index("ix_staff_client_assignments_user", "user_id"),
         Index("ix_staff_client_assignments_org", "organization_id"),
+    )
+
+
+class DeletionRequestModel(Base):
+    """A staff member's request to delete a client business, pending the owner.
+
+    Staff deletes do not destroy anything: they create a row here, the Clients
+    page shows the business with a "deletion pending" badge, and only the
+    owner's approval performs the (still impact-guarded) delete. `status`
+    tracks the owner's decision so a rejected request cannot be silently
+    re-asked into existence -- a new request after a rejection is a new,
+    visible decision.
+
+    `organization_id` CASCADEs (a business gone by any means takes its
+    requests with it); `requested_by` is SET NULL so deleting the requester's
+    account does not destroy the audit trail of what they asked for.
+    """
+
+    __tablename__ = "deletion_requests"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    requested_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    status = Column(
+        String(16), nullable=False, default=PENDING, server_default=text("'pending'")
+    )
+    reason = Column(Text, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    resolved_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_deletion_requests_org", "organization_id"),
+        Index("ix_deletion_requests_status", "status"),
     )
 
 

@@ -23,17 +23,23 @@ Authorization is two-layered (see api/services/agency_access.py):
   query: a staff member's unassigned businesses never leave the database.
 """
 
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from api.constants import AUTH_PROVIDER
+from api.constants import AUTH_PROVIDER, OWNER_EMAILS
 from api.db import db_client
-from api.db.models import UserModel
+from api.db.models import DeletionRequestModel, UserModel
 from api.schemas.organization import OrganizationCreateRequest, OrganizationListItem
-from api.services.agency_access import ensure_business_access, is_agency_owner
+from api.services.agency_access import (
+    ensure_business_access,
+    is_agency_owner,
+    STAFF_ROLE,
+)
 from api.services.auth.depends import get_user, require_agency_owner
+from api.utils.auth import hash_password
 
 router = APIRouter(
     prefix="/agency",
@@ -64,6 +70,10 @@ class AgencyClientSummary(BaseModel):
     name: Optional[str] = None
     label: str
     archived: bool = False
+    # True while a staff member's deletion request awaits the owner's decision
+    # (V2.1d). The list renders a badge; the business is untouched until the
+    # owner approves.
+    deletion_pending: bool = False
     workflow_count: int = 0
     run_count: int = 0
     phone_number_count: int = 0
@@ -149,10 +159,16 @@ async def list_agency_clients(
     counts = await db_client.get_organization_resource_counts(
         [org.id for org in organizations]
     )
+    pending = await db_client.list_organization_ids_with_pending_deletion(
+        [org.id for org in organizations]
+    )
 
     # The `name or provider_id` contract lives in `_summary_for`, shared with
     # the single-client read so the two surfaces cannot drift.
-    return [_summary_for(org, counts.get(org.id)) for org in organizations]
+    return [
+        _summary_for(org, counts.get(org.id), deletion_pending=org.id in pending)
+        for org in organizations
+    ]
 
 
 @router.get(
@@ -212,7 +228,12 @@ async def get_agency_client(
     organization = await _require_organization(organization_id)
     await ensure_business_access(user, organization_id)
     stats = await _stats_for(organization.id)
-    return _summary_for(organization, stats)
+    pending = await db_client.list_organization_ids_with_pending_deletion(
+        [organization.id]
+    )
+    return _summary_for(
+        organization, stats, deletion_pending=organization.id in pending
+    )
 
 
 @router.post("/clients", response_model=OrganizationListItem, status_code=201)
@@ -298,20 +319,19 @@ async def unarchive_agency_client(
 @router.delete("/clients/{organization_id}", status_code=204)
 async def delete_agency_client(
     organization_id: int,
-    user: UserModel = Depends(get_user),
+    user: UserModel = Depends(require_agency_owner),
 ):
-    """Delete a business outright. Refused if it holds any work history.
+    """Delete a business outright. Owner-only; refused if it holds history.
 
-    Archive is what an operator should normally reach for. This exists so that a
-    business created and immediately abandoned -- a duplicate onboarding, a typo --
-    can still be removed, without giving a one-click button the power to destroy a
-    client's call history.
+    Staff deletes go through `POST .../deletion-request` and land in the
+    owner's queue -- this route is the owner's own action, and it stays
+    impact-guarded exactly as before: a business with work history is refused
+    (409, with the counts) and pointed at archiving.
 
     Returns 409 with the blocking counts so the refusal is actionable rather than a
     bare status code.
     """
     organization = await _require_organization(organization_id)
-    await ensure_business_access(user, organization_id)
     stats = await _stats_for(organization.id)
 
     blocking = [k for k in _DELETE_SAFE_THRESHOLDS if stats[k] > 0]
@@ -341,6 +361,417 @@ async def delete_agency_client(
 
 
 # =============================================================================
+# Deletion requests (staff asks; the owner decides)
+# =============================================================================
+
+
+class DeletionRequestSummary(BaseModel):
+    """One deletion request, as the owner's queue renders it."""
+
+    id: int
+    organization_id: int
+    business_label: str
+    requested_by_email: Optional[str] = None
+    reason: Optional[str] = None
+    created_at: Optional[datetime] = None
+    status: str
+
+
+class DeletionRequestCreateRequest(BaseModel):
+    reason: Optional[str] = Field(None, max_length=500)
+
+
+def _request_summary(
+    request, organization, requester, status: str | None = None
+) -> DeletionRequestSummary:
+    """Render a request. `status` overrides the row's own value for the approve
+    path, where the decision is stamped on without mutating the loaded row."""
+    return DeletionRequestSummary(
+        id=request.id,
+        organization_id=organization.id,
+        business_label=getattr(organization, "name", None) or organization.provider_id,
+        requested_by_email=getattr(requester, "email", None),
+        reason=request.reason,
+        created_at=getattr(request, "created_at", None),
+        status=status or request.status,
+    )
+
+
+@router.post(
+    "/clients/{organization_id}/deletion-request",
+    response_model=DeletionRequestSummary,
+    status_code=201,
+)
+async def create_deletion_request(
+    organization_id: int,
+    request: DeletionRequestCreateRequest,
+    user: UserModel = Depends(get_user),
+):
+    """A staff member asks for a business to be deleted. Nothing is destroyed.
+
+    The owner decides from the access page: approval runs the same
+    impact-guarded delete a direct owner delete would, rejection clears the
+    request. A business with one pending request cannot collect another -- the
+    queue stays one open question per business.
+    """
+    organization = await _require_organization(organization_id)
+    await ensure_business_access(user, organization_id)
+
+    try:
+        created = await db_client.create_deletion_request(
+            organization.id, requested_by=user.id, reason=request.reason
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=409,
+            detail="A deletion request for this business is already pending",
+        )
+    return _request_summary(created, organization, user)
+
+
+@router.get("/deletion-requests", response_model=list[DeletionRequestSummary])
+async def list_deletion_requests(user: UserModel = Depends(require_agency_owner)):
+    """The owner's queue: every pending request, oldest first."""
+    requests = await db_client.list_pending_deletion_requests()
+    summaries = []
+    for request in requests:
+        organization = await db_client.get_organization_by_id(request.organization_id)
+        requester = (
+            await db_client.get_user_by_id(request.requested_by)
+            if request.requested_by
+            else None
+        )
+        if organization is None:
+            continue
+        summaries.append(_request_summary(request, organization, requester))
+    return summaries
+
+
+async def _resolve_deletion_request(
+    request_id: int,
+    decision: str,
+    user: UserModel,
+) -> DeletionRequestSummary:
+    """Shared tail of approve/reject: load, check status, record the decision."""
+    request = await db_client.get_deletion_request(request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="Deletion request not found")
+    if request.status != DeletionRequestModel.PENDING:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This request was already {request.status}",
+        )
+    resolved = await db_client.resolve_deletion_request(
+        request_id, decision, resolved_by=user.id
+    )
+    organization = await db_client.get_organization_by_id(resolved.organization_id)
+    requester = (
+        await db_client.get_user_by_id(resolved.requested_by)
+        if resolved.requested_by
+        else None
+    )
+    return _request_summary(resolved, organization, requester)
+
+
+@router.post(
+    "/deletion-requests/{request_id}/approve",
+    response_model=DeletionRequestSummary,
+)
+async def approve_deletion_request(
+    request_id: int,
+    user: UserModel = Depends(require_agency_owner),
+):
+    """Approve a deletion request: the guarded delete actually runs.
+
+    The impact guard applies here exactly as it does for a direct owner
+    delete -- a business with work history is refused with 409 and the counts,
+    and the request stays pending so the owner can reject it or archive the
+    business instead.
+    """
+    request = await db_client.get_deletion_request(request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="Deletion request not found")
+    if request.status != DeletionRequestModel.PENDING:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This request was already {request.status}",
+        )
+
+    organization = await _require_organization(request.organization_id)
+    stats = await _stats_for(organization.id)
+    blocking = [k for k in _DELETE_SAFE_THRESHOLDS if stats[k] > 0]
+    if blocking:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "This business has work history and cannot be deleted. "
+                    "Reject the request and archive the business instead."
+                ),
+                **stats,
+            },
+        )
+
+    requester = (
+        await db_client.get_user_by_id(request.requested_by)
+        if request.requested_by
+        else None
+    )
+    await db_client.clear_selected_organization_references(organization.id)
+    await db_client.clear_organization_users(organization.id)
+    await db_client.delete_organization(organization.id)
+    # The delete CASCADEs the request row away (organization_id is ondelete
+    # CASCADE), so there is nothing left to update -- the approval is the
+    # deletion itself. The response is built from the request as it was
+    # loaded, with the decision stamped on without mutating the row.
+    return _request_summary(request, organization, requester, status="approved")
+
+
+@router.post(
+    "/deletion-requests/{request_id}/reject",
+    response_model=DeletionRequestSummary,
+)
+async def reject_deletion_request(
+    request_id: int,
+    user: UserModel = Depends(require_agency_owner),
+):
+    """Reject a deletion request. The business is untouched."""
+    return await _resolve_deletion_request(request_id, "rejected", user)
+
+
+# =============================================================================
+# Staff management (owner only)
+# =============================================================================
+
+
+class AssignedClient(BaseModel):
+    id: int
+    label: str
+
+
+class StaffAccountSummary(BaseModel):
+    """One staff account, as the access-management page renders it."""
+
+    id: int
+    email: Optional[str] = None
+    name: Optional[str] = None
+    suspended: bool = False
+    created_at: Optional[datetime] = None
+    assigned_clients: list[AssignedClient] = []
+
+
+class StaffCreateRequest(BaseModel):
+    """Body for creating a staff account.
+
+    The owner picks the password and hands it over out-of-band; there is no
+    email dispatch in this fork. No organization is created and no bootstrap
+    runs -- a staff account is an access grant, not a tenant.
+    """
+
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+    name: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("password must not be blank")
+        return value
+
+
+class StaffAssignmentsRequest(BaseModel):
+    """The staff member's full assignment set; the saved list replaces the old."""
+
+    organization_ids: list[int]
+
+
+class StaffPasswordResetRequest(BaseModel):
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("password must not be blank")
+        return value
+
+
+class StaffSuspendRequest(BaseModel):
+    suspended: bool
+
+
+def _staff_summary(user_row, assigned_orgs: list) -> StaffAccountSummary:
+    return StaffAccountSummary(
+        id=user_row.id,
+        email=getattr(user_row, "email", None),
+        name=getattr(user_row, "name", None),
+        suspended=bool(getattr(user_row, "is_suspended", False)),
+        created_at=getattr(user_row, "created_at", None),
+        assigned_clients=[
+            AssignedClient(
+                id=org.id,
+                label=getattr(org, "name", None) or org.provider_id,
+            )
+            for org in assigned_orgs
+        ],
+    )
+
+
+async def _require_staff_account(staff_user_id: int) -> UserModel:
+    """Load the target of a staff-management route, with the guards that are
+    the same for every one of them."""
+    target = await db_client.get_user_by_id(staff_user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Staff account not found")
+    if is_agency_owner(target):
+        raise HTTPException(
+            status_code=400,
+            detail="That account is the agency owner and cannot be managed here",
+        )
+    return target
+
+
+@router.get("/staff", response_model=list[StaffAccountSummary])
+async def list_staff(user: UserModel = Depends(require_agency_owner)):
+    """Every staff account with its assignments.
+
+    One assignments query per staff member: the access page shows each
+    account's businesses, and the account count is small by construction.
+    If staff ever numbers in the hundreds, this is the query to batch --
+    not before.
+    """
+    staff_users = await db_client.list_staff_users()
+    summaries = []
+    for account in staff_users:
+        assigned = await db_client.list_organizations_for_staff(account.id)
+        summaries.append(_staff_summary(account, assigned))
+    return summaries
+
+
+@router.post("/staff", response_model=StaffAccountSummary, status_code=201)
+async def create_staff_account(
+    request: StaffCreateRequest,
+    user: UserModel = Depends(require_agency_owner),
+):
+    """Create a staff account. The owner hands the password to the hire.
+
+    An email on OWNER_EMAILS is refused here even though the account would be
+    created as staff: the one-way promotion at auth time would make it the
+    owner on first login, which is not what a staff-creation form should ever
+    do by surprise.
+    """
+    if request.email.strip().lower() in OWNER_EMAILS:
+        raise HTTPException(
+            status_code=400,
+            detail="That email is reserved for the agency owner",
+        )
+
+    existing = await db_client.get_user_by_email(request.email)
+    if existing:
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    created = await db_client.create_user_with_email(
+        email=request.email,
+        password_hash=hash_password(request.password),
+        name=request.name,
+        agency_role=STAFF_ROLE,
+    )
+    return _staff_summary(created, [])
+
+
+@router.patch("/staff/{staff_user_id}/suspended", response_model=StaffAccountSummary)
+async def set_staff_suspended(
+    staff_user_id: int,
+    request: StaffSuspendRequest,
+    user: UserModel = Depends(require_agency_owner),
+):
+    """Suspend or reactivate a staff account.
+
+    Suspension is the offboarding primitive: it is checked on every auth path
+    (login, token, API key), so access dies immediately even for an already-
+    issued JWT -- which assignment revocation alone cannot do.
+    """
+    target = await _require_staff_account(staff_user_id)
+    await db_client.set_user_suspended(staff_user_id, request.suspended)
+    target.is_suspended = request.suspended
+    assigned = await db_client.list_organizations_for_staff(staff_user_id)
+    return _staff_summary(target, assigned)
+
+
+@router.post("/staff/{staff_user_id}/reset-password", status_code=204)
+async def reset_staff_password(
+    staff_user_id: int,
+    request: StaffPasswordResetRequest,
+    user: UserModel = Depends(require_agency_owner),
+):
+    """Overwrite a staff password. The owner delivers the new one directly."""
+    target = await _require_staff_account(staff_user_id)
+    del target  # guards only; the write is by id
+    await db_client.set_user_password(
+        staff_user_id, hash_password(request.new_password)
+    )
+    return None
+
+
+@router.put("/staff/{staff_user_id}/assignments", response_model=StaffAccountSummary)
+async def replace_staff_assignments(
+    staff_user_id: int,
+    request: StaffAssignmentsRequest,
+    user: UserModel = Depends(require_agency_owner),
+):
+    """Replace the staff member's client assignments with the submitted set.
+
+    The saved list is the whole truth, not a delta -- a checkbox list that
+    applied item-by-item could leave half of an edit in force after a failure.
+    Unknown business ids are refused before anything is written.
+    """
+    target = await _require_staff_account(staff_user_id)
+
+    unique_ids = list(dict.fromkeys(request.organization_ids))
+    for organization_id in unique_ids:
+        if await db_client.get_organization_by_id(organization_id) is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Organization {organization_id} not found",
+            )
+
+    await db_client.set_staff_assignments(staff_user_id, unique_ids)
+    assigned = await db_client.list_organizations_for_staff(staff_user_id)
+    return _staff_summary(target, assigned)
+
+
+@router.delete("/staff/{staff_user_id}", status_code=204)
+async def delete_staff_account(
+    staff_user_id: int,
+    user: UserModel = Depends(require_agency_owner),
+):
+    """Delete a staff account outright -- refused if they built any agents.
+
+    `workflows.user_id` carries no ondelete, so an account with agents cannot
+    be deleted at the database level; the refusal is surfaced with a count and
+    the suspend alternative rather than as a 500. Assignments cascade via FK.
+    """
+    target = await _require_staff_account(staff_user_id)
+    del target
+    workflow_count = await db_client.count_workflows_owned_by_user(staff_user_id)
+    if workflow_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "This account has built agents and cannot be deleted. "
+                    "Suspend it instead -- that removes access immediately "
+                    "while keeping its agent history."
+                ),
+                "workflow_count": workflow_count,
+            },
+        )
+    await db_client.delete_user(staff_user_id)
+    return None
+
+
+# =============================================================================
 # Shared helpers
 # =============================================================================
 
@@ -358,7 +789,11 @@ async def _require_organization(organization_id: int):
     return organization
 
 
-def _summary_for(organization, counts: dict | None) -> AgencyClientSummary:
+def _summary_for(
+    organization,
+    counts: dict | None,
+    deletion_pending: bool = False,
+) -> AgencyClientSummary:
     """One business as the Clients surfaces render it.
 
     `label` is `name or provider_id` -- `organizations.name` is nullable by
@@ -375,6 +810,7 @@ def _summary_for(organization, counts: dict | None) -> AgencyClientSummary:
         name=getattr(organization, "name", None),
         label=getattr(organization, "name", None) or organization.provider_id,
         archived=bool(getattr(organization, "archived", False)),
+        deletion_pending=deletion_pending,
         **(
             counts
             or {

@@ -144,6 +144,9 @@ function ClientsContent() {
                     </Link>
                   </CardTitle>
                   {client.archived && <Badge variant="secondary">Archived</Badge>}
+                  {client.deletion_pending && (
+                    <Badge variant="destructive">Deletion pending</Badge>
+                  )}
                 </div>
                 <CardDescription className="truncate font-mono text-xs">
                   {client.provider_id}

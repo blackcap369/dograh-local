@@ -225,6 +225,82 @@ class UserClient(BaseDBClient):
             )
             return result.scalar_one_or_none()
 
+    async def list_staff_users(self) -> list[UserModel]:
+        """Every staff account, oldest first -- the access page's read.
+
+        With signup open, self-registered accounts land here too: the owner
+        sees who exists on the instance and decides what each one may touch.
+        """
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(UserModel)
+                .where(UserModel.agency_role == "staff")
+                .order_by(UserModel.id)
+            )
+            return list(result.scalars().all())
+
+    async def set_user_password(self, user_id: int, password_hash: str) -> None:
+        """Overwrite a user's password hash (owner-initiated reset)."""
+        async with self.async_session() as session:
+            from sqlalchemy import update
+
+            stmt = (
+                update(UserModel)
+                .where(UserModel.id == user_id)
+                .values(password_hash=password_hash)
+            )
+            result = await session.execute(stmt)
+            if result.rowcount == 0:
+                raise ValueError(f"User with ID {user_id} not found")
+            await session.commit()
+
+    async def set_user_suspended(self, user_id: int, suspended: bool) -> None:
+        """Set the user's suspension flag."""
+        async with self.async_session() as session:
+            from sqlalchemy import update
+
+            stmt = (
+                update(UserModel)
+                .where(UserModel.id == user_id)
+                .values(is_suspended=suspended)
+            )
+            result = await session.execute(stmt)
+            if result.rowcount == 0:
+                raise ValueError(f"User with ID {user_id} not found")
+            await session.commit()
+
+    async def count_workflows_owned_by_user(self, user_id: int) -> int:
+        """How many agents this account built.
+
+        Deleting a user whose user_id is stamped on workflows trips the FK
+        (workflows.user_id carries no ondelete), so the staff-delete route
+        must know before it tries.
+        """
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(func.count(UserModel.id))
+                .select_from(UserModel)
+                .join(UserModel.workflows)
+                .where(UserModel.id == user_id)
+            )
+            return int(result.scalar_one())
+
+    async def delete_user(self, user_id: int) -> bool:
+        """Delete a user row outright. Returns False if already gone.
+
+        Caller guards apply: owners are undeletable via this path, and a user
+        who owns workflows must be suspended instead (the FK would abort the
+        delete).
+        """
+        async with self.async_session() as session:
+            from sqlalchemy import delete as sa_delete
+
+            result = await session.execute(
+                sa_delete(UserModel).where(UserModel.id == user_id)
+            )
+            await session.commit()
+            return result.rowcount > 0
+
     async def get_user_by_email(self, email: str) -> UserModel | None:
         """Fetch a user by their email address (case-insensitive).
 

@@ -263,6 +263,18 @@ async def get_user_with_selected_organization(
     return user
 
 
+def _raise_if_suspended(user: UserModel) -> None:
+    """Reject the request when the account is suspended.
+
+    Called on every auth path that produces a user (token auth, API-key auth,
+    and the login route): assignment revocation alone would let an existing
+    JWT ride out its expiry, so suspension is the check that makes an
+    offboarding decision take effect immediately.
+    """
+    if getattr(user, "is_suspended", False):
+        raise HTTPException(status_code=403, detail="This account has been suspended")
+
+
 def require_agency_owner(
     user: Annotated[UserModel, Depends(get_user)],
 ) -> UserModel:
@@ -320,6 +332,7 @@ async def _handle_oss_auth(authorization: str | None) -> UserModel:
     # role check downstream reads the user row -- so this is where the env
     # and the stored role converge.
     await promote_to_owner_if_listed(user)
+    _raise_if_suspended(user)
 
     # Deliberately outside the try above: a provisioning failure must not be
     # reported to the user as an expired token.
@@ -354,6 +367,8 @@ async def _handle_api_key_auth(api_key: str) -> UserModel:
 
     # Set the organization context to the API key's organization
     user.selected_organization_id = api_key_model.organization_id
+
+    _raise_if_suspended(user)
 
     logger.debug(
         f"Authenticated via API key: {api_key_model.key_prefix}... "

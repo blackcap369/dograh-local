@@ -8,6 +8,7 @@ from sqlalchemy.future import select
 
 from api.db.base_client import BaseDBClient
 from api.db.models import (
+    DeletionRequestModel,
     OrganizationModel,
     StaffClientAssignmentModel,
     TelephonyPhoneNumberModel,
@@ -96,6 +97,127 @@ class OrganizationClient(BaseDBClient):
                 )
             )
             await session.commit()
+
+    async def set_staff_assignments(
+        self, user_id: int, organization_ids: list[int]
+    ) -> None:
+        """Replace the staff user's entire assignment set in one transaction.
+
+        The access page saves the checkbox list as a whole, so the write is
+        all-or-nothing: a partial apply (some clients added, others not yet
+        removed) would leave the operator guessing what access actually
+        exists. Callers validate the ids first; this method trusts them.
+        """
+        async with self.async_session() as session:
+            await session.execute(
+                sa_delete(StaffClientAssignmentModel).where(
+                    StaffClientAssignmentModel.user_id == user_id
+                )
+            )
+            if organization_ids:
+                await session.execute(
+                    insert(StaffClientAssignmentModel),
+                    [
+                        {"user_id": user_id, "organization_id": org_id}
+                        for org_id in organization_ids
+                    ],
+                )
+            await session.commit()
+
+    # =========================================================================
+    # Deletion requests (staff asks, owner decides)
+    # =========================================================================
+
+    async def create_deletion_request(
+        self, organization_id: int, requested_by: int | None, reason: str | None = None
+    ) -> DeletionRequestModel:
+        """Open a pending deletion request for a business.
+
+        Refuses (ValueError) when a PENDING request for the same business
+        already exists -- one open question per business, so the owner's queue
+        is unambiguous. A request rejected earlier does not block a new one:
+        re-asking after a rejection is a new, visible decision.
+        """
+        async with self.async_session() as session:
+            existing = await session.execute(
+                select(DeletionRequestModel.id).where(
+                    DeletionRequestModel.organization_id == organization_id,
+                    DeletionRequestModel.status == DeletionRequestModel.PENDING,
+                )
+            )
+            if existing.scalar_one_or_none() is not None:
+                raise ValueError("A deletion request is already pending")
+
+            request = DeletionRequestModel(
+                organization_id=organization_id,
+                requested_by=requested_by,
+                reason=reason,
+                status=DeletionRequestModel.PENDING,
+            )
+            session.add(request)
+            await session.commit()
+            await session.refresh(request)
+            return request
+
+    async def get_deletion_request(
+        self, request_id: int
+    ) -> Optional[DeletionRequestModel]:
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(DeletionRequestModel).where(
+                    DeletionRequestModel.id == request_id
+                )
+            )
+            return result.scalars().first()
+
+    async def list_pending_deletion_requests(self) -> list[DeletionRequestModel]:
+        """Every pending request, oldest first -- the owner's queue."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(DeletionRequestModel)
+                .where(DeletionRequestModel.status == DeletionRequestModel.PENDING)
+                .order_by(DeletionRequestModel.id)
+            )
+            return list(result.scalars().all())
+
+    async def resolve_deletion_request(
+        self, request_id: int, status: str, resolved_by: int
+    ) -> Optional[DeletionRequestModel]:
+        """Set a request's final status and who decided it."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(DeletionRequestModel).where(
+                    DeletionRequestModel.id == request_id
+                )
+            )
+            request = result.scalars().first()
+            if request is None:
+                return None
+            request.status = status
+            request.resolved_by = resolved_by
+            request.resolved_at = datetime.now(timezone.utc)
+            await session.commit()
+            await session.refresh(request)
+            return request
+
+    async def list_organization_ids_with_pending_deletion(
+        self, organization_ids: list[int]
+    ) -> set[int]:
+        """Which of these businesses have a pending deletion request.
+
+        One query for the whole list, so the Clients page's per-card badge
+        costs the same whether the agency has five clients or five hundred.
+        """
+        if not organization_ids:
+            return set()
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(DeletionRequestModel.organization_id).where(
+                    DeletionRequestModel.organization_id.in_(organization_ids),
+                    DeletionRequestModel.status == DeletionRequestModel.PENDING,
+                )
+            )
+            return {row[0] for row in result.all()}
 
     async def get_organization_users(self, organization_id: int) -> list[UserModel]:
         """Get all users linked to an organization (many-to-many)."""

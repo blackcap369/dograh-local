@@ -112,6 +112,11 @@ async def login(request: LoginRequest):
     if not verify_password(request.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
+    # A suspended account cannot log in -- the owner's offboarding decision
+    # must take effect at the door, not just on already-issued tokens.
+    if getattr(user, "is_suspended", False):
+        raise HTTPException(status_code=403, detail="This account has been suspended")
+
     # One-way promotion: an email added to OWNER_EMAILS after the account was
     # created becomes an owner on the next login.
     await promote_to_owner_if_listed(user)

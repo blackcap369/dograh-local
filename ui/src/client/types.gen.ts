@@ -325,6 +325,10 @@ export type AgencyClientSummary = {
      */
     archived?: boolean;
     /**
+     * Deletion Pending
+     */
+    deletion_pending?: boolean;
+    /**
      * Workflow Count
      */
     workflow_count?: number;
@@ -437,6 +441,20 @@ export type AssemblyAisttConfiguration = {
      * ISO 639-1 language code.
      */
     language?: string;
+};
+
+/**
+ * AssignedClient
+ */
+export type AssignedClient = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Label
+     */
+    label: string;
 };
 
 /**
@@ -2174,6 +2192,52 @@ export type DefaultConfigurationsResponse = {
     default_call_dispositions: Array<CallDispositionOption>;
     text_chat_inactivity_timeout_constraints: TextChatInactivityTimeoutConstraints;
     widget_text_defaults: WidgetTexts;
+};
+
+/**
+ * DeletionRequestCreateRequest
+ */
+export type DeletionRequestCreateRequest = {
+    /**
+     * Reason
+     */
+    reason?: string | null;
+};
+
+/**
+ * DeletionRequestSummary
+ *
+ * One deletion request, as the owner's queue renders it.
+ */
+export type DeletionRequestSummary = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Organization Id
+     */
+    organization_id: number;
+    /**
+     * Business Label
+     */
+    business_label: string;
+    /**
+     * Requested By Email
+     */
+    requested_by_email?: string | null;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+    /**
+     * Status
+     */
+    status: string;
 };
 
 /**
@@ -6204,6 +6268,94 @@ export type SpeechmaticsSttConfiguration = {
      * ISO 639-1 language code.
      */
     language?: string;
+};
+
+/**
+ * StaffAccountSummary
+ *
+ * One staff account, as the access-management page renders it.
+ */
+export type StaffAccountSummary = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Email
+     */
+    email?: string | null;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Suspended
+     */
+    suspended?: boolean;
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+    /**
+     * Assigned Clients
+     */
+    assigned_clients?: Array<AssignedClient>;
+};
+
+/**
+ * StaffAssignmentsRequest
+ *
+ * The staff member's full assignment set; the saved list replaces the old.
+ */
+export type StaffAssignmentsRequest = {
+    /**
+     * Organization Ids
+     */
+    organization_ids: Array<number>;
+};
+
+/**
+ * StaffCreateRequest
+ *
+ * Body for creating a staff account.
+ *
+ * The owner picks the password and hands it over out-of-band; there is no
+ * email dispatch in this fork. No organization is created and no bootstrap
+ * runs -- a staff account is an access grant, not a tenant.
+ */
+export type StaffCreateRequest = {
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Password
+     */
+    password: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+};
+
+/**
+ * StaffPasswordResetRequest
+ */
+export type StaffPasswordResetRequest = {
+    /**
+     * New Password
+     */
+    new_password: string;
+};
+
+/**
+ * StaffSuspendRequest
+ */
+export type StaffSuspendRequest = {
+    /**
+     * Suspended
+     */
+    suspended: boolean;
 };
 
 /**
@@ -16322,6 +16474,435 @@ export type UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostRe
 };
 
 export type UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostResponse = UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostResponses[keyof UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostResponses];
+
+export type CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostData = {
+    body: DeletionRequestCreateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/clients/{organization_id}/deletion-request';
+};
+
+export type CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostError = CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostErrors[keyof CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostErrors];
+
+export type CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DeletionRequestSummary;
+};
+
+export type CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostResponse = CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostResponses[keyof CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostResponses];
+
+export type ListDeletionRequestsApiV1AgencyDeletionRequestsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/deletion-requests';
+};
+
+export type ListDeletionRequestsApiV1AgencyDeletionRequestsGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListDeletionRequestsApiV1AgencyDeletionRequestsGetError = ListDeletionRequestsApiV1AgencyDeletionRequestsGetErrors[keyof ListDeletionRequestsApiV1AgencyDeletionRequestsGetErrors];
+
+export type ListDeletionRequestsApiV1AgencyDeletionRequestsGetResponses = {
+    /**
+     * Response List Deletion Requests Api V1 Agency Deletion Requests Get
+     *
+     * Successful Response
+     */
+    200: Array<DeletionRequestSummary>;
+};
+
+export type ListDeletionRequestsApiV1AgencyDeletionRequestsGetResponse = ListDeletionRequestsApiV1AgencyDeletionRequestsGetResponses[keyof ListDeletionRequestsApiV1AgencyDeletionRequestsGetResponses];
+
+export type ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Request Id
+         */
+        request_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/deletion-requests/{request_id}/approve';
+};
+
+export type ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostError = ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostErrors[keyof ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostErrors];
+
+export type ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeletionRequestSummary;
+};
+
+export type ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostResponse = ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostResponses[keyof ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostResponses];
+
+export type RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Request Id
+         */
+        request_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/deletion-requests/{request_id}/reject';
+};
+
+export type RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostError = RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostErrors[keyof RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostErrors];
+
+export type RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeletionRequestSummary;
+};
+
+export type RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostResponse = RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostResponses[keyof RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostResponses];
+
+export type ListStaffApiV1AgencyStaffGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/staff';
+};
+
+export type ListStaffApiV1AgencyStaffGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListStaffApiV1AgencyStaffGetError = ListStaffApiV1AgencyStaffGetErrors[keyof ListStaffApiV1AgencyStaffGetErrors];
+
+export type ListStaffApiV1AgencyStaffGetResponses = {
+    /**
+     * Response List Staff Api V1 Agency Staff Get
+     *
+     * Successful Response
+     */
+    200: Array<StaffAccountSummary>;
+};
+
+export type ListStaffApiV1AgencyStaffGetResponse = ListStaffApiV1AgencyStaffGetResponses[keyof ListStaffApiV1AgencyStaffGetResponses];
+
+export type CreateStaffAccountApiV1AgencyStaffPostData = {
+    body: StaffCreateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/staff';
+};
+
+export type CreateStaffAccountApiV1AgencyStaffPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateStaffAccountApiV1AgencyStaffPostError = CreateStaffAccountApiV1AgencyStaffPostErrors[keyof CreateStaffAccountApiV1AgencyStaffPostErrors];
+
+export type CreateStaffAccountApiV1AgencyStaffPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: StaffAccountSummary;
+};
+
+export type CreateStaffAccountApiV1AgencyStaffPostResponse = CreateStaffAccountApiV1AgencyStaffPostResponses[keyof CreateStaffAccountApiV1AgencyStaffPostResponses];
+
+export type SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchData = {
+    body: StaffSuspendRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Staff User Id
+         */
+        staff_user_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/staff/{staff_user_id}/suspended';
+};
+
+export type SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchError = SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchErrors[keyof SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchErrors];
+
+export type SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: StaffAccountSummary;
+};
+
+export type SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchResponse = SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchResponses[keyof SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchResponses];
+
+export type ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostData = {
+    body: StaffPasswordResetRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Staff User Id
+         */
+        staff_user_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/staff/{staff_user_id}/reset-password';
+};
+
+export type ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostError = ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostErrors[keyof ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostErrors];
+
+export type ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostResponse = ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostResponses[keyof ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostResponses];
+
+export type ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutData = {
+    body: StaffAssignmentsRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Staff User Id
+         */
+        staff_user_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/staff/{staff_user_id}/assignments';
+};
+
+export type ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutError = ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutErrors[keyof ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutErrors];
+
+export type ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: StaffAccountSummary;
+};
+
+export type ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutResponse = ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutResponses[keyof ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutResponses];
+
+export type DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Staff User Id
+         */
+        staff_user_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/staff/{staff_user_id}';
+};
+
+export type DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteError = DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteErrors[keyof DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteErrors];
+
+export type DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteResponse = DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteResponses[keyof DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteResponses];
 
 export type HealthApiV1HealthGetData = {
     body?: never;

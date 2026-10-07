@@ -309,6 +309,20 @@ class TestStaffBusinessAccess:
         assert response.status_code == 403, response.text
 
     @pytest.mark.asyncio
+    async def test_staff_delete_is_403_even_for_assigned_businesses(self):
+        """Direct delete belongs to the owner; staff ask via deletion-request."""
+        app = _make_agency_app(STAFF_ID, "staff")
+        client = TestClient(app)
+
+        mock_db = _patched_db(assigned=True)
+        with patch("api.routes.agency.db_client", mock_db), patch(
+            "api.db.db_client", mock_db
+        ):
+            response = client.delete(f"/api/v1/agency/clients/{ACME.id}")
+
+        assert response.status_code == 403, response.text
+
+    @pytest.mark.asyncio
     async def test_missing_business_is_404_even_for_staff(self):
         """404 before any access decision: probing for ids must not leak which
         businesses exist."""
@@ -317,8 +331,12 @@ class TestStaffBusinessAccess:
 
         mock_db = _patched_db(assigned=False)
         mock_db.get_organization_by_id = AsyncMock(return_value=None)
-        with patch("api.routes.agency.db_client", mock_db):
-            response = client.delete("/api/v1/agency/clients/4242")
+        with patch("api.routes.agency.db_client", mock_db), patch(
+            "api.db.db_client", mock_db
+        ):
+            response = client.patch(
+                "/api/v1/agency/clients/4242", json={"name": "Ghost"}
+            )
 
         assert response.status_code == 404, response.text
 

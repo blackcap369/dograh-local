@@ -20,6 +20,7 @@ import {
   Settings,
   TrendingUp,
   UserRound,
+  Users,
   Workflow,
   Wrench,
 } from "lucide-react";
@@ -59,6 +60,7 @@ import { useLeadForms } from "@/context/LeadFormsContext";
 import { useMode } from "@/context/ModeContext";
 import { useTelephonyConfigWarnings } from "@/context/TelephonyConfigWarningsContext";
 import { useLatestReleaseVersion } from "@/hooks/useLatestReleaseVersion";
+import { isAgencyOwner } from "@/lib/agency";
 import type { LocalUser } from "@/lib/auth";
 import { useAuth } from "@/lib/auth";
 import { IS_WHITELABEL } from "@/lib/branding";
@@ -73,6 +75,10 @@ type SidebarNavItem = {
   // under any other provider (it is a local-auth-only path), so a nav entry that is
   // still visible there would lead to a form that can only ever fail.
   localOnly?: boolean;
+  // Hidden unless the account holds the agency owner role. Everything it
+  // gates is enforced server-side too; this only keeps dead links out of the
+  // sidebar for staff.
+  ownerOnly?: boolean;
 };
 
 type SidebarNavSection = {
@@ -194,6 +200,13 @@ const CREATIVE_NAV_SECTIONS: SidebarNavSection[] = [
         url: "/creative/clients",
         icon: UserRound,
         localOnly: true,
+      },
+      {
+        title: "Team",
+        url: "/creative/team",
+        icon: Users,
+        localOnly: true,
+        ownerOnly: true,
       },
     ],
   },
@@ -446,7 +459,9 @@ export function AppSidebar() {
       <SidebarContent className={cn("notranslate", isCollapsed && "px-0")} translate="no">
         {sections.map((section, index) => {
           const visibleItems = section.items.filter(
-            (item) => !item.localOnly || provider === "local"
+            (item) =>
+              (!item.localOnly || provider === "local") &&
+              (!item.ownerOnly || isAgencyOwner(user))
           );
           // A group can be emptied entirely by the provider filter above; rendering
           // its label with nothing under it would leave a stray "MANAGE" heading.

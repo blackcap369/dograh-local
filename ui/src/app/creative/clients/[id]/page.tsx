@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import {
   archiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePost,
+  createDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPost,
   deleteAgencyClientApiV1AgencyClientsOrganizationIdDelete,
   getAgencyClientApiV1AgencyClientsOrganizationIdGet,
   getAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGet,
@@ -43,7 +44,9 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMode } from "@/context/ModeContext";
 import { useOrgConfig } from "@/context/OrgConfigContext";
+import { isAgencyOwner } from "@/lib/agency";
 import { detailFromError } from "@/lib/apiError";
+import { useAuth } from "@/lib/auth";
 import logger from "@/lib/logger";
 
 /**
@@ -60,6 +63,8 @@ function ClientDetailContent() {
   const router = useRouter();
   const { setMode } = useMode();
   const { switchOrganization } = useOrgConfig();
+  const { user } = useAuth();
+  const owner = isAgencyOwner(user);
 
   const [client, setClient] = useState<AgencyClientSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -188,6 +193,33 @@ function ClientDetailContent() {
   const handleDeleteClick = async () => {
     if (!client) return;
 
+    // Staff never delete: they ask, and the owner decides. The badge on the
+    // client comes from the backend once the request exists.
+    if (!owner) {
+      try {
+        setIsFetchingImpact(true);
+        const response =
+          await createDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPost(
+            { path: { organization_id: client.id }, body: {} }
+          );
+        if (response.error || !response.data) {
+          throw new Error(
+            detailFromError(response.error, "Could not send the request")
+          );
+        }
+        toast.success("Deletion request sent to the agency owner");
+        await refreshClient();
+      } catch (err) {
+        logger.error("Failed to create deletion request", err);
+        toast.error(
+          err instanceof Error ? err.message : "Could not send the request"
+        );
+      } finally {
+        setIsFetchingImpact(false);
+      }
+      return;
+    }
+
     try {
       setIsFetchingImpact(true);
       const response =
@@ -280,6 +312,9 @@ function ClientDetailContent() {
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-3xl font-bold">{client.label}</h1>
           {client.archived && <Badge variant="secondary">Archived</Badge>}
+          {client.deletion_pending && (
+            <Badge variant="destructive">Deletion pending owner approval</Badge>
+          )}
         </div>
         <p className="mt-1 font-mono text-xs text-muted-foreground">
           {client.provider_id}
@@ -377,13 +412,20 @@ function ClientDetailContent() {
         <CardHeader>
           <CardTitle className="text-destructive">Danger zone</CardTitle>
           <CardDescription>
-            Deleting removes the business outright. Anything with work history
-            cannot be deleted -- archive it instead.
+            {owner
+              ? "Deleting removes the business outright. Anything with work history cannot be deleted -- archive it instead."
+              : "Send the agency owner a request to delete this business. Nothing happens until they approve it."}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Button variant="destructive" onClick={handleDeleteClick} disabled={isFetchingImpact}>
-            {isFetchingImpact ? "Checking..." : "Delete client"}
+            {isFetchingImpact
+              ? "Working..."
+              : owner
+                ? "Delete client"
+                : client.deletion_pending
+                  ? "Deletion pending owner approval"
+                  : "Request deletion"}
           </Button>
         </CardContent>
       </Card>
