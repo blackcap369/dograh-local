@@ -9,6 +9,7 @@ from sqlalchemy.future import select
 from api.db.base_client import BaseDBClient
 from api.db.models import (
     OrganizationModel,
+    StaffClientAssignmentModel,
     TelephonyPhoneNumberModel,
     UserModel,
     WorkflowModel,
@@ -27,6 +28,74 @@ class OrganizationClient(BaseDBClient):
                 select(OrganizationModel).where(OrganizationModel.id == organization_id)
             )
             return result.scalars().first()
+
+    # =========================================================================
+    # Staff client assignments (agency surface access, NOT org membership)
+    # =========================================================================
+
+    async def is_user_assigned_to_organization(
+        self, user_id: int, organization_id: int
+    ) -> bool:
+        """Whether the staff user has an assignment row for this business."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(StaffClientAssignmentModel.id).where(
+                    StaffClientAssignmentModel.user_id == user_id,
+                    StaffClientAssignmentModel.organization_id == organization_id,
+                )
+            )
+            return result.scalar_one_or_none() is not None
+
+    async def list_organizations_for_staff(
+        self, user_id: int
+    ) -> list[OrganizationModel]:
+        """Every business the staff user is assigned to, oldest first.
+
+        The staff Clients page's only read. Deliberately a join against the
+        assignment table -- not a filter applied after listing everything --
+        so an unassigned business's name never leaves the database for a staff
+        caller.
+        """
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(OrganizationModel)
+                .join(
+                    StaffClientAssignmentModel,
+                    StaffClientAssignmentModel.organization_id
+                    == OrganizationModel.id,
+                )
+                .where(StaffClientAssignmentModel.user_id == user_id)
+                .order_by(OrganizationModel.id)
+            )
+            return list(result.scalars().all())
+
+    async def assign_staff_to_organization(
+        self, user_id: int, organization_id: int
+    ) -> None:
+        """Grant a staff user access to a business. Idempotent."""
+        async with self.async_session() as session:
+            stmt = (
+                insert(StaffClientAssignmentModel)
+                .values(user_id=user_id, organization_id=organization_id)
+                .on_conflict_do_nothing(
+                    constraint="uq_staff_client_assignments_user_org"
+                )
+            )
+            await session.execute(stmt)
+            await session.commit()
+
+    async def unassign_staff_from_organization(
+        self, user_id: int, organization_id: int
+    ) -> None:
+        """Revoke a staff user's access to a business."""
+        async with self.async_session() as session:
+            await session.execute(
+                sa_delete(StaffClientAssignmentModel).where(
+                    StaffClientAssignmentModel.user_id == user_id,
+                    StaffClientAssignmentModel.organization_id == organization_id,
+                )
+            )
+            await session.commit()
 
     async def get_organization_users(self, organization_id: int) -> list[UserModel]:
         """Get all users linked to an organization (many-to-many)."""

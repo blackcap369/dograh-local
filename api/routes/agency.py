@@ -2,7 +2,7 @@
 
 This router is NOT organization-scoped. Every other route in this service derives
 `organization_id` from the authenticated user's selected organization and authorizes
-against it. The routes here do the opposite: they read across all organizations on
+against it. The routes here do the opposite: they read across organizations on
 the instance, because the person using them is the agency operator managing clients,
 not a user working inside one client.
 
@@ -11,10 +11,16 @@ routes on the organization router. An org-scoped rename would authorize on the
 operator's *selected* organization, which is arbitrary here -- the business being
 renamed is usually not the one they are standing in.
 
-The operator gate is a single named function, `require_agency_operator`, so adding
-roles later touches exactly one place. Today every authenticated user passes it
-because this fork has no role system; that is a deliberate, flagged gap, not an
-oversight.
+Authorization is two-layered (see api/services/agency_access.py):
+
+- `require_agency_owner` gates the owner-only writes (creating a client, and
+  later the access-management settings). Only `users.agency_role == 'owner'`
+  passes -- the role is claimed via OWNER_EMAILS and promoted one-way at auth
+  time.
+- `ensure_business_access` gates every route aimed at one business. An owner
+  passes by identity; a staff member passes only with a row in
+  `staff_client_assignments`. The Clients *list* is scoped the same way at the
+  query: a staff member's unassigned businesses never leave the database.
 """
 
 from typing import Optional
@@ -26,7 +32,8 @@ from api.constants import AUTH_PROVIDER
 from api.db import db_client
 from api.db.models import UserModel
 from api.schemas.organization import OrganizationCreateRequest, OrganizationListItem
-from api.services.auth.depends import get_user
+from api.services.agency_access import ensure_business_access, is_agency_owner
+from api.services.auth.depends import get_user, require_agency_owner
 
 router = APIRouter(
     prefix="/agency",
@@ -37,25 +44,6 @@ router = APIRouter(
 # Resource counts that make a business unsafe to delete outright. Anything with
 # history is refused and must be archived instead -- see `_stats_for`.
 _DELETE_SAFE_THRESHOLDS = ("workflow_count", "run_count", "phone_number_count")
-
-
-def require_agency_operator(user: UserModel = Depends(get_user)) -> UserModel:
-    """The single gate for every cross-organization read and write in this fork.
-
-    Kept as a dependency rather than an inline check so that introducing roles --
-    deferred until the agency actually hires -- is a change to this one function.
-
-    There is no role system today, so this resolves to "any authenticated user". The
-    agency routes return every business on the instance, so the day this fork gains
-    a second kind of user, this function is where that distinction has to be
-    enforced. It is called out here rather than left implicit.
-    """
-    if AUTH_PROVIDER != "local":
-        # Under Stack the active team is owned by Stack Auth and re-asserted on
-        # every request, so agency state would be unreachable or contradictory.
-        # 404 rather than 403 keeps the router unadvertised.
-        raise HTTPException(status_code=404, detail="Not found")
-    return user
 
 
 # =============================================================================
@@ -125,11 +113,16 @@ class AgencyClientRenameRequest(BaseModel):
 
 @router.get("/clients", response_model=list[AgencyClientSummary])
 async def list_agency_clients(
-    user: UserModel = Depends(require_agency_operator),
+    user: UserModel = Depends(get_user),
 ):
-    """Every active business on the instance, with its resource counts.
+    """Every business this account may see, with its resource counts.
 
-    The one deliberately cross-organization query in this fork.
+    Owners see the whole instance -- the one deliberately cross-organization
+    query in this fork. Staff see only their assignments, and the scoping
+    happens in the query (`list_organizations_for_staff`), not in Python: an
+    unassigned business's name must never leave the database for a staff
+    caller, exactly as the archived filter is applied at the query for
+    everyone.
 
     The archived filter is applied twice on purpose, at the query
     (`list_all_organizations`) and again here. The query filter is the one that
@@ -141,11 +134,18 @@ async def list_agency_clients(
     of bug nobody reports until it is expensive. It also keeps this route correct
     if `list_all_organizations` is ever called with `include_archived=True`.
     """
-    organizations = [
-        org
-        for org in await db_client.list_all_organizations()
-        if not getattr(org, "archived", False)
-    ]
+    if is_agency_owner(user):
+        organizations = [
+            org
+            for org in await db_client.list_all_organizations()
+            if not getattr(org, "archived", False)
+        ]
+    else:
+        organizations = [
+            org
+            for org in await db_client.list_organizations_for_staff(user.id)
+            if not getattr(org, "archived", False)
+        ]
     counts = await db_client.get_organization_resource_counts(
         [org.id for org in organizations]
     )
@@ -161,7 +161,7 @@ async def list_agency_clients(
 )
 async def get_agency_client_delete_impact(
     organization_id: int,
-    user: UserModel = Depends(require_agency_operator),
+    user: UserModel = Depends(get_user),
 ):
     """Report what a delete would destroy, before anything is destroyed.
 
@@ -175,6 +175,7 @@ async def get_agency_client_delete_impact(
     so this endpoint exists to make the cost visible first.
     """
     organization = await _require_organization(organization_id)
+    await ensure_business_access(user, organization_id)
     stats = await _stats_for(organization_id)
 
     blocking = [k for k in _DELETE_SAFE_THRESHOLDS if stats[k] > 0]
@@ -198,7 +199,7 @@ async def get_agency_client_delete_impact(
 @router.get("/clients/{organization_id}", response_model=AgencyClientSummary)
 async def get_agency_client(
     organization_id: int,
-    user: UserModel = Depends(require_agency_operator),
+    user: UserModel = Depends(get_user),
 ):
     """One business by id, archived included.
 
@@ -209,6 +210,7 @@ async def get_agency_client(
     through raw API calls.
     """
     organization = await _require_organization(organization_id)
+    await ensure_business_access(user, organization_id)
     stats = await _stats_for(organization.id)
     return _summary_for(organization, stats)
 
@@ -216,7 +218,7 @@ async def get_agency_client(
 @router.post("/clients", response_model=OrganizationListItem, status_code=201)
 async def create_agency_client(
     request: OrganizationCreateRequest,
-    user: UserModel = Depends(require_agency_operator),
+    user: UserModel = Depends(require_agency_owner),
 ):
     """Add a new client business.
 
@@ -246,7 +248,7 @@ async def create_agency_client(
 async def rename_agency_client(
     organization_id: int,
     request: AgencyClientRenameRequest,
-    user: UserModel = Depends(require_agency_operator),
+    user: UserModel = Depends(get_user),
 ):
     """Rename a business's display label.
 
@@ -255,6 +257,7 @@ async def rename_agency_client(
     record, and member selection that points at this business.
     """
     organization = await _require_organization(organization_id)
+    await ensure_business_access(user, organization_id)
     renamed = await db_client.rename_organization(organization.id, name=request.name)
     return OrganizationListItem(
         id=renamed.id,
@@ -266,7 +269,7 @@ async def rename_agency_client(
 @router.post("/clients/{organization_id}/archive", status_code=204)
 async def archive_agency_client(
     organization_id: int,
-    user: UserModel = Depends(require_agency_operator),
+    user: UserModel = Depends(get_user),
 ):
     """Hide a business from the switcher and the Clients list, keeping all data.
 
@@ -275,6 +278,7 @@ async def archive_agency_client(
     unarchive.
     """
     organization = await _require_organization(organization_id)
+    await ensure_business_access(user, organization_id)
     await db_client.set_organization_archived(organization.id, True)
     return None
 
@@ -282,10 +286,11 @@ async def archive_agency_client(
 @router.post("/clients/{organization_id}/unarchive", status_code=204)
 async def unarchive_agency_client(
     organization_id: int,
-    user: UserModel = Depends(require_agency_operator),
+    user: UserModel = Depends(get_user),
 ):
     """Return an archived business to the switcher."""
     organization = await _require_organization(organization_id)
+    await ensure_business_access(user, organization_id)
     await db_client.set_organization_archived(organization.id, False)
     return None
 
@@ -293,7 +298,7 @@ async def unarchive_agency_client(
 @router.delete("/clients/{organization_id}", status_code=204)
 async def delete_agency_client(
     organization_id: int,
-    user: UserModel = Depends(require_agency_operator),
+    user: UserModel = Depends(get_user),
 ):
     """Delete a business outright. Refused if it holds any work history.
 
@@ -306,6 +311,7 @@ async def delete_agency_client(
     bare status code.
     """
     organization = await _require_organization(organization_id)
+    await ensure_business_access(user, organization_id)
     stats = await _stats_for(organization.id)
 
     blocking = [k for k in _DELETE_SAFE_THRESHOLDS if stats[k] > 0]

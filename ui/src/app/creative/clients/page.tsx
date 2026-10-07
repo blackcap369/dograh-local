@@ -18,7 +18,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isAgencyOwner } from "@/lib/agency";
 import { detailFromError } from "@/lib/apiError";
+import { useAuth } from "@/lib/auth";
 
 /**
  * Creative Mode: every client business on the instance, with the resource
@@ -28,6 +30,8 @@ import { detailFromError } from "@/lib/apiError";
  * involved in seeing all of them.
  */
 function ClientsContent() {
+  const { user } = useAuth();
+  const owner = isAgencyOwner(user);
   const [clients, setClients] = useState<AgencyClientSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -92,26 +96,34 @@ function ClientsContent() {
         <div>
           <h1 className="text-3xl font-bold">Clients</h1>
           <p className="mt-1 text-muted-foreground">
-            Manage every client business from one place. Each one gets an
-            isolated space for agents, numbers, files, and keys.
+            {owner
+              ? "Manage every client business from one place. Each one gets an isolated space for agents, numbers, files, and keys."
+              : "Your assigned client businesses. Each one is an isolated space for agents, numbers, files, and keys."}
           </p>
         </div>
-        <Button asChild>
-          <Link href="/creative/clients/new">Add Client</Link>
-        </Button>
+        {owner && (
+          <Button asChild>
+            <Link href="/creative/clients/new">Add Client</Link>
+          </Button>
+        )}
       </div>
 
       {clients.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
-            <p className="text-lg font-semibold">No clients yet</p>
-            <p className="max-w-md text-muted-foreground">
-              Onboard your first client business. Everything you build for them
-              stays scoped to their space.
+            <p className="text-lg font-semibold">
+              {owner ? "No clients yet" : "No clients assigned to you yet"}
             </p>
-            <Button asChild>
-              <Link href="/creative/clients/new">Create a client</Link>
-            </Button>
+            <p className="max-w-md text-muted-foreground">
+              {owner
+                ? "Onboard your first client business. Everything you build for them stays scoped to their space."
+                : "Once the agency owner assigns client businesses to you, they appear here."}
+            </p>
+            {owner && (
+              <Button asChild>
+                <Link href="/creative/clients/new">Create a client</Link>
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (

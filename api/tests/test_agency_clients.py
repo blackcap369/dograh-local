@@ -45,12 +45,22 @@ INITIATIVE = SimpleNamespace(
 )
 
 
-def _make_agency_app(user_id: int = OPERATOR_ID, org_id: int | None = None) -> FastAPI:
+def _make_agency_app(
+    user_id: int = OPERATOR_ID,
+    org_id: int | None = None,
+    agency_role: str = "owner",
+) -> FastAPI:
     """App exposing both routers, as api/app.py does.
 
     `org_id` is the operator's *selected* organization, which is irrelevant to the
     agency routes on purpose: Creative Mode is not scoped to it. It is set anyway so
     a regression that starts reading `selected_organization_id` is visible.
+
+    `agency_role` defaults to owner because the suite was written when the
+    operator gate passed every authenticated user -- these tests assert what an
+    OWNER can do. Staff behavior has its own suite (test_agency_roles.py); a
+    default of staff here would have flipped every test in this file to 403 in
+    one silent step.
     """
     app = FastAPI()
     app.include_router(agency.router, prefix="/api/v1")
@@ -59,6 +69,7 @@ def _make_agency_app(user_id: int = OPERATOR_ID, org_id: int | None = None) -> F
         id=user_id,
         provider_id=OPERATOR_PROVIDER,
         selected_organization_id=org_id,
+        agency_role=agency_role,
     )
     return app
 

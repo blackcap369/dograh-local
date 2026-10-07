@@ -69,6 +69,16 @@ CORS_ALLOWED_ORIGINS = [
 ]
 AUTH_PROVIDER = os.getenv("AUTH_PROVIDER", "local")
 ENABLE_SIGNUP = os.getenv("ENABLE_SIGNUP", "true").lower() == "true"
+# The agency owners, by login email, comma-separated. Lives only in this env
+# file -- it is the secret that decides who the agency belongs to. A user
+# signing up or logging in with one of these emails is promoted to the owner
+# role (users.agency_role = 'owner') at auth time; promotion is one-way, so
+# removing an email here later does not silently demote an existing owner.
+OWNER_EMAILS = {
+    e.strip().lower()
+    for e in os.getenv("OWNER_EMAILS", "").split(",")
+    if e.strip()
+}
 # Stack Auth public client config. These are safe to expose to the browser (the
 # publishable client key is public by design, and the project id is non-sensitive),
 # and are served to the UI at runtime via /api/v1/health so the frontend no longer

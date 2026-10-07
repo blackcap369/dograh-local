@@ -196,6 +196,35 @@ class UserClient(BaseDBClient):
             await session.execute(stmt)
             await session.commit()
 
+    async def update_user_agency_role(self, user_id: int, agency_role: str) -> None:
+        """Set the user's agency-level role ('owner' or 'staff').
+
+        The one-way owner promotion in agency_access.py funnels through here.
+        There is deliberately no demotion caller: removing an email from
+        OWNER_EMAILS must not silently demote an account that was already
+        promoted.
+        """
+        async with self.async_session() as session:
+            from sqlalchemy import update
+
+            stmt = (
+                update(UserModel)
+                .where(UserModel.id == user_id)
+                .values(agency_role=agency_role)
+            )
+            result = await session.execute(stmt)
+            if result.rowcount == 0:
+                raise ValueError(f"User with ID {user_id} not found")
+            await session.commit()
+
+    async def get_user_agency_role(self, user_id: int) -> str | None:
+        """The user's stored agency role, or None if the user does not exist."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(UserModel.agency_role).where(UserModel.id == user_id)
+            )
+            return result.scalar_one_or_none()
+
     async def get_user_by_email(self, email: str) -> UserModel | None:
         """Fetch a user by their email address (case-insensitive).
 
@@ -212,14 +241,23 @@ class UserClient(BaseDBClient):
             return result.scalars().first()
 
     async def create_user_with_email(
-        self, email: str, password_hash: str, name: str | None = None
+        self,
+        email: str,
+        password_hash: str,
+        name: str | None = None,
+        agency_role: str = "staff",
     ) -> UserModel:
-        """Create a new user with email and password hash."""
+        """Create a new user with email and password hash.
+
+        `agency_role` is resolved by the caller (resolve_agency_role against
+        OWNER_EMAILS) -- the DB layer stores, it does not decide.
+        """
         async with self.async_session() as session:
             user = UserModel(
                 provider_id=f"oss_{int(datetime.now(timezone.utc).timestamp())}_{uuid.uuid4()}",
                 email=email.lower(),
                 password_hash=password_hash,
+                agency_role=agency_role,
             )
             session.add(user)
             await session.commit()

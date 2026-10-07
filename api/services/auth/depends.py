@@ -7,6 +7,7 @@ from api.constants import AUTH_PROVIDER
 from api.db import db_client
 from api.db.models import UserModel
 from api.enums import PostHogEvent
+from api.services.agency_access import is_agency_owner, promote_to_owner_if_listed
 from api.services.auth.stack_auth import stackauth
 from api.services.organization_bootstrap import ensure_organization_bootstrapped
 from api.services.posthog_client import (
@@ -262,6 +263,30 @@ async def get_user_with_selected_organization(
     return user
 
 
+def require_agency_owner(
+    user: Annotated[UserModel, Depends(get_user)],
+) -> UserModel:
+    """The owner-only gate for the agency surface's privileged writes.
+
+    Creating a client, and (coming with the access-management settings)
+    assigning staff and restoring from trash. Lives beside `get_user` rather
+    than in agency_access.py because it is a FastAPI dependency over get_user,
+    and agency_access must not import this module back.
+
+    Under Stack auth this raises 404 rather than 403: the active team is owned
+    by Stack Auth and re-asserted on every request, so agency state would be
+    unreachable or contradictory -- staying unadvertised keeps the surface
+    honest.
+    """
+    if AUTH_PROVIDER != "local":
+        raise HTTPException(status_code=404, detail="Not found")
+    if not is_agency_owner(user):
+        raise HTTPException(
+            status_code=403, detail="Only the agency owner can do that"
+        )
+    return user
+
+
 async def _handle_oss_auth(authorization: str | None) -> UserModel:
     """
     Handle authentication for OSS deployment mode.
@@ -289,6 +314,12 @@ async def _handle_oss_auth(authorization: str | None) -> UserModel:
         raise
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    # One-way promotion from OWNER_EMAILS: an email added to the owners list
+    # after the account exists becomes an owner on this request, and every
+    # role check downstream reads the user row -- so this is where the env
+    # and the stored role converge.
+    await promote_to_owner_if_listed(user)
 
     # Deliberately outside the try above: a provisioning failure must not be
     # reported to the user as an expired token.

@@ -14,6 +14,10 @@ export interface LocalUser extends BaseUser {
   organizationId?: string;
   displayName?: string;
   provider_id?: string;
+  // Agency-level role from the backend (/auth/me, signup, login). 'owner'
+  // sees and can enter every business; 'staff' only assigned ones. Absent on
+  // sessions created before the field existed -- treated as staff.
+  agencyRole?: 'owner' | 'staff';
 }
 
 // Union type for all user types

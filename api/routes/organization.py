@@ -58,6 +58,7 @@ from api.schemas.telephony_phone_number import (
     PhoneNumberUpdateRequest,
     ProviderSyncStatus,
 )
+from api.services.agency_access import is_agency_owner
 from api.services.auth.depends import (
     get_user,
     get_user_with_selected_organization,
@@ -333,8 +334,11 @@ async def switch_organization(
     # The id came from the request body, so it proves nothing about membership on its
     # own. Re-derive the caller's organizations and require the target to be among
     # them; without this the endpoint is a cross-tenant escalation primitive.
+    # The agency owner is the deliberate exception: ownership is the power to
+    # stand in any business on the instance, so membership is not consulted.
     memberships = await db_client.get_organizations_for_user(user.id)
-    if not any(org.id == organization.id for org in memberships):
+    is_member = any(org.id == organization.id for org in memberships)
+    if not is_member and not is_agency_owner(user):
         raise HTTPException(
             status_code=403, detail="You do not have access to that organization"
         )

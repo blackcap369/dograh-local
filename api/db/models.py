@@ -70,6 +70,15 @@ class UserModel(Base):
     is_superuser = Column(Boolean, default=False)
     email = Column(String, nullable=True)
     password_hash = Column(String, nullable=True)
+    # Agency-level role: 'owner' sees and can enter every business on the
+    # instance; 'staff' sees only businesses assigned in
+    # staff_client_assignments. It rides on the user -- not the organization
+    # membership -- because it answers "what is this account", not "what can
+    # it do inside one business". Owners are promoted from OWNER_EMAILS at
+    # auth time and never demoted automatically; see agency_access.py.
+    agency_role = Column(
+        String(16), nullable=False, default="staff", server_default=text("'staff'")
+    )
 
     __table_args__ = (
         Index(
@@ -78,6 +87,42 @@ class UserModel(Base):
             unique=True,
             postgresql_where=text("email IS NOT NULL"),
         ),
+    )
+
+
+class StaffClientAssignmentModel(Base):
+    """One staff member's assignment to one client business.
+
+    Agency-wide and many-to-many: a staff member may cover several clients and
+    a client may be covered by several staff members. This is NOT the
+    `organization_users` membership -- membership means "can stand inside this
+    business"; assignment means "this staff account is allowed to work on this
+    client from the agency surface". Owners never need a row here: ownership
+    covers every business by definition.
+    """
+
+    __tablename__ = "staff_client_assignments"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "organization_id", name="uq_staff_client_assignments_user_org"
+        ),
+        Index("ix_staff_client_assignments_user", "user_id"),
+        Index("ix_staff_client_assignments_org", "organization_id"),
     )
 
 

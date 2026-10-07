@@ -5,6 +5,10 @@ from api.db import db_client
 from api.db.models import UserModel
 from api.enums import PostHogEvent
 from api.schemas.auth import AuthResponse, LoginRequest, SignupRequest, UserResponse
+from api.services.agency_access import (
+    promote_to_owner_if_listed,
+    resolve_agency_role,
+)
 from api.services.auth.depends import get_user, require_local_auth
 from api.services.organization_bootstrap import ensure_organization_bootstrapped
 from api.services.posthog_client import capture_event
@@ -30,12 +34,16 @@ async def signup(request: SignupRequest):
     if existing_user:
         raise HTTPException(status_code=409, detail="Email already registered")
 
-    # Hash password and create user
+    # Hash password and create user. The role is resolved against OWNER_EMAILS
+    # here: the agency's owner account is claimed by signing up with the
+    # owner email, and every other signup lands as staff.
     hashed = hash_password(request.password)
+    agency_role = resolve_agency_role(request.email)
     user = await db_client.create_user_with_email(
         email=request.email,
         password_hash=hashed,
         name=request.name,
+        agency_role=agency_role,
     )
 
     # Create organization for the user
@@ -82,6 +90,9 @@ async def signup(request: SignupRequest):
             name=request.name,
             organization_id=organization.id,
             provider_id=user.provider_id,
+            # getattr, not attribute access: this must not depend on the mock
+            # or row carrying the fresh column.
+            agency_role=getattr(user, "agency_role", agency_role),
         ),
     )
 
@@ -100,6 +111,10 @@ async def login(request: LoginRequest):
     # Verify password
     if not verify_password(request.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    # One-way promotion: an email added to OWNER_EMAILS after the account was
+    # created becomes an owner on the next login.
+    await promote_to_owner_if_listed(user)
 
     # Create JWT token
     token = create_jwt_token(user.id, user.email)
@@ -120,15 +135,19 @@ async def login(request: LoginRequest):
             email=user.email,
             organization_id=user.selected_organization_id,
             provider_id=user.provider_id,
+            agency_role=getattr(user, "agency_role", "staff"),
         ),
     )
 
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user(user: UserModel = Depends(get_user)):
+    await promote_to_owner_if_listed(user)
     return UserResponse(
         id=user.id,
         email=user.email,
+        name=getattr(user, "name", None),
         organization_id=user.selected_organization_id,
         provider_id=user.provider_id,
+        agency_role=getattr(user, "agency_role", "staff"),
     )

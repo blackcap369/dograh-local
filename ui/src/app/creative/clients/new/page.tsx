@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { createAgencyClientApiV1AgencyClientsPost } from "@/client/sdk.gen";
@@ -17,7 +17,9 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { isAgencyOwner } from "@/lib/agency";
 import { detailFromError } from "@/lib/apiError";
+import { useAuth } from "@/lib/auth";
 import logger from "@/lib/logger";
 
 /**
@@ -30,6 +32,8 @@ import logger from "@/lib/logger";
  */
 function NewClientContent() {
   const router = useRouter();
+  const { user } = useAuth();
+  const owner = isAgencyOwner(user);
   const [name, setName] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +74,16 @@ function NewClientContent() {
       setIsCreating(false);
     }
   };
+
+  useEffect(() => {
+    if (!owner) {
+      router.replace("/creative/clients");
+    }
+  }, [owner, router]);
+
+  if (!owner) {
+    return null;
+  }
 
   return (
     <div className="container mx-auto px-4 py-12">

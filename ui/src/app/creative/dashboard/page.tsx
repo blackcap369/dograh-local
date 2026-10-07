@@ -18,7 +18,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isAgencyOwner } from "@/lib/agency";
 import { detailFromError } from "@/lib/apiError";
+import { useAuth } from "@/lib/auth";
 import { APP_NAME } from "@/lib/branding";
 
 /**
@@ -27,6 +29,8 @@ import { APP_NAME } from "@/lib/branding";
  * dashboard costs the instance no more than the page it links to.
  */
 function DashboardContent() {
+  const { user } = useAuth();
+  const owner = isAgencyOwner(user);
   const [clients, setClients] = useState<AgencyClientSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -108,12 +112,16 @@ function DashboardContent() {
         <div>
           <h1 className="text-3xl font-bold">Home</h1>
           <p className="mt-1 text-muted-foreground">
-            Every client business on this {APP_NAME} instance, at a glance.
+            {owner
+              ? `Every client business on this ${APP_NAME} instance, at a glance.`
+              : "Your assigned client businesses, at a glance."}
           </p>
         </div>
-        <Button asChild>
-          <Link href="/creative/clients/new">Add Client</Link>
-        </Button>
+        {owner && (
+          <Button asChild>
+            <Link href="/creative/clients/new">Add Client</Link>
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -170,9 +178,11 @@ function DashboardContent() {
         )}
         {clients.length === 0 && (
           <CardContent>
-            <Button asChild>
-              <Link href="/creative/clients/new">Create your first client</Link>
-            </Button>
+            {owner && (
+              <Button asChild>
+                <Link href="/creative/clients/new">Create your first client</Link>
+              </Button>
+            )}
           </CardContent>
         )}
       </Card>

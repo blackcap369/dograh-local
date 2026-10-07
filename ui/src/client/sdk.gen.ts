@@ -2015,9 +2015,14 @@ export const getNodeTypeApiV1NodeTypesNameGet = <ThrowOnError extends boolean = 
 /**
  * List Agency Clients
  *
- * Every active business on the instance, with its resource counts.
+ * Every business this account may see, with its resource counts.
  *
- * The one deliberately cross-organization query in this fork.
+ * Owners see the whole instance -- the one deliberately cross-organization
+ * query in this fork. Staff see only their assignments, and the scoping
+ * happens in the query (`list_organizations_for_staff`), not in Python: an
+ * unassigned business's name must never leave the database for a staff
+ * caller, exactly as the archived filter is applied at the query for
+ * everyone.
  *
  * The archived filter is applied twice on purpose, at the query
  * (`list_all_organizations`) and again here. The query filter is the one that

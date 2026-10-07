@@ -7444,6 +7444,10 @@ export type UserResponse = {
      * Provider Id
      */
     provider_id?: string | null;
+    /**
+     * Agency Role
+     */
+    agency_role?: string;
 };
 
 /**
