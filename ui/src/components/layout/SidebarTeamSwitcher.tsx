@@ -165,9 +165,6 @@ function LocalTeamSwitcher({
     org.name ?? org.provider_id;
 
   const orgList = organizations ?? [];
-  const activeOrganization = orgList.find(
-    (org) => org.id === currentOrganizationId
-  );
 
   return (
     <div className="relative space-y-1">
