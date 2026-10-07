@@ -1,7 +1,18 @@
 # Multi-Tenant Agency Platform — Delivery Roadmap
 
 Branch: `feat/multi-tenant-org-switching`
-Status: Step 0 complete. Step 1 next.
+Status: Steps 0-4 complete. Verified end-to-end in the running app (2026-10-07).
+
+> 2026-10-07 delivery note. Step 2 landed as the Creative-Mode agency surface
+> (`/agency/clients` CRUD) rather than per-org member roles -- the PRD puts
+> member/role management in V2, and every authenticated operator passes
+> `require_agency_operator` until then (flagged in agency.py). Membership
+> switching is enforced: a non-member gets 403 from `/organizations/switch`.
+> Two real bugs were found by end-to-end testing and fixed with regression
+> tests: the resource-count query referenced a nonexistent
+> `workflow_runs.organization_id` (fixed via a workflows join), and the
+> returned count dicts were sparse (KeyError in the delete guard; now
+> pre-zero-filled per requested id).
 
 ## Rule
 

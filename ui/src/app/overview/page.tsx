@@ -6,10 +6,14 @@ import { GitHubStarBadge } from '@/components/layout/GitHubStarBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth';
+import { IS_WHITELABEL } from '@/lib/branding';
 
 export default function OverviewPage() {
     const { user, provider } = useAuth();
-    const isOSSMode = provider !== 'stack';
+    // White-label strips the upstream promo copy and resource links -- the
+    // star badge, the "alternative to Vapi" pitch, and the Dograh docs/GitHub
+    // buttons are all upstream-project surfaces, not agency-neutral ones.
+    const showDograhPromo = provider !== 'stack' && !IS_WHITELABEL;
 
     return (
         <div className="container mx-auto px-4 py-8">
@@ -18,14 +22,14 @@ export default function OverviewPage() {
                 <Card className="mb-8">
                     <CardHeader>
                         <CardTitle className="text-3xl">
-                            {isOSSMode ? (
+                            {showDograhPromo ? (
                                 "Welcome to Dograh"
                             ) : (
                                 `Welcome${user?.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}!`
                             )}
                         </CardTitle>
                         <CardDescription className="text-lg mt-2">
-                            {isOSSMode ? (
+                            {showDograhPromo ? (
                                 <>
                                     Open source alternative to Vapi. Help us support the project by giving us a star on GitHub.
                                 </>
@@ -35,7 +39,7 @@ export default function OverviewPage() {
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        {isOSSMode && (
+                        {showDograhPromo && (
                             <div className="mb-6">
                                 <GitHubStarBadge label="Star us on GitHub" showCount source="overview_page" />
                             </div>
@@ -79,36 +83,38 @@ export default function OverviewPage() {
                 </div>
 
                 {/* Resources Section */}
-                <Card className="mt-8">
-                    <CardHeader>
-                        <CardTitle>Resources</CardTitle>
-                        <CardDescription>
-                            Get help and learn more about Dograh
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="flex flex-wrap gap-4">
-                            <Button asChild variant="outline">
-                                <a
-                                    href="https://docs.dograh.com"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                >
-                                    Documentation
-                                </a>
-                            </Button>
-                            <Button asChild variant="outline">
-                                <a
-                                    href="https://github.com/dograh-hq/dograh/issues"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                >
-                                    Report an Issue
-                                </a>
-                            </Button>
-                        </div>
-                    </CardContent>
-                </Card>
+                {!IS_WHITELABEL && (
+                    <Card className="mt-8">
+                        <CardHeader>
+                            <CardTitle>Resources</CardTitle>
+                            <CardDescription>
+                                Get help and learn more about Dograh
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="flex flex-wrap gap-4">
+                                <Button asChild variant="outline">
+                                    <a
+                                        href="https://docs.dograh.com"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        Documentation
+                                    </a>
+                                </Button>
+                                <Button asChild variant="outline">
+                                    <a
+                                        href="https://github.com/dograh-hq/dograh/issues"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        Report an Issue
+                                    </a>
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
             </div>
         </div>
     );

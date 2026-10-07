@@ -20,6 +20,7 @@ import { OnboardingProvider } from "@/context/OnboardingContext";
 import { OrgConfigProvider } from "@/context/OrgConfigContext";
 import { TelephonyConfigWarningsProvider } from "@/context/TelephonyConfigWarningsContext";
 import { AuthProvider } from "@/lib/auth";
+import { APP_NAME } from "@/lib/branding";
 
 
 const geistSans = Geist({
@@ -33,7 +34,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Dograh",
+  // NEXT_PUBLIC_APP_NAME lets a white-label deployment rename the product in
+  // the browser tab without touching the upstream logo assets.
+  title: APP_NAME,
   description: "Open Source Voice Assistant Workflow Builder",
 };
 

@@ -56,10 +56,12 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAppConfig } from "@/context/AppConfigContext";
 import { useLeadForms } from "@/context/LeadFormsContext";
+import { useMode } from "@/context/ModeContext";
 import { useTelephonyConfigWarnings } from "@/context/TelephonyConfigWarningsContext";
 import { useLatestReleaseVersion } from "@/hooks/useLatestReleaseVersion";
 import type { LocalUser } from "@/lib/auth";
 import { useAuth } from "@/lib/auth";
+import { IS_WHITELABEL } from "@/lib/branding";
 import { cn } from "@/lib/utils";
 
 type SidebarNavItem = {
@@ -169,6 +171,34 @@ const NAV_SECTIONS: SidebarNavSection[] = [
   },
 ];
 
+// Creative Mode is the agency operator's cross-organization surface: every
+// client business at once, no selected organization underneath it. The BUILD
+// and MANAGE groups belong to Organization Mode and are replaced wholesale
+// here rather than filtered item by item, so the two navigations can drift
+// without ever showing a half-and-half sidebar.
+const CREATIVE_NAV_SECTIONS: SidebarNavSection[] = [
+  {
+    items: [
+      {
+        title: "Home",
+        url: "/creative/dashboard",
+        icon: Home,
+      },
+    ],
+  },
+  {
+    label: "MANAGE",
+    items: [
+      {
+        title: "Clients",
+        url: "/creative/clients",
+        icon: UserRound,
+        localOnly: true,
+      },
+    ],
+  },
+];
+
 export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -176,6 +206,7 @@ export function AppSidebar() {
   const { provider, logout, user } = useAuth();
   const { config } = useAppConfig();
   const { openHireExpert } = useLeadForms();
+  const { mode } = useMode();
   const {
     telnyxMissingWebhookPublicKeyCount,
     vonageMissingSignatureSecretCount,
@@ -185,13 +216,21 @@ export function AppSidebar() {
     vonageMissingSignatureSecretCount > 0;
   const isCollapsed = !isMobile && state === "collapsed";
 
+  // Creative Mode is the operator managing the agency; the org switcher is an
+  // Organization Mode control -- there is no "selected business" to show while
+  // looking across all of them.
+  const sections = mode === "creative" ? CREATIVE_NAV_SECTIONS : NAV_SECTIONS;
+  const showOrgSwitcher = mode === "organization";
+
   // Version info from app config context
   const versionInfo = config ? { ui: config.uiVersion, api: config.apiVersion } : null;
 
   // Check for updates only on self-hosted (OSS) deployments — cloud is managed for the user.
+  // Hidden entirely under white-label: the release nag links to upstream docs.
+  const showReleaseBadge = !IS_WHITELABEL;
   const { latest: latestRelease, isBehind, isLatest } = useLatestReleaseVersion(
     versionInfo?.ui,
-    { enabled: config?.deploymentMode === "oss" },
+    { enabled: config?.deploymentMode === "oss" && showReleaseBadge },
   );
 
   const isActive = (path: string) => pathname.startsWith(path);
@@ -306,32 +345,35 @@ export function AppSidebar() {
 
   // "Hire an Expert" CTA, rendered INSIDE the shared footer pill next to the
   // profile icon. Expanded: label pill filling the row. Collapsed: icon-only.
-  const hireExpertButton = isCollapsed ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          size="icon"
-          className="h-7 w-7 rounded-full"
-          onClick={() => openHireExpert("sidebar")}
-          aria-label="Hire an Expert"
-        >
-          <UserRound className="h-3.5 w-3.5" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="right">
-        <p>Hire an Expert</p>
-      </TooltipContent>
-    </Tooltip>
-  ) : (
-    <Button
-      size="sm"
-      className="h-7 gap-1.5 rounded-full px-3 text-xs"
-      onClick={() => openHireExpert("sidebar")}
-    >
-      <UserRound className="h-3.5 w-3.5" />
-      Hire an Expert
-    </Button>
-  );
+  // Suppressed under white-label -- it is a Dograh lead form, not agency UI.
+  const hireExpertButton = !IS_WHITELABEL ? (
+    isCollapsed ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="icon"
+            className="h-7 w-7 rounded-full"
+            onClick={() => openHireExpert("sidebar")}
+            aria-label="Hire an Expert"
+          >
+            <UserRound className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="right">
+          <p>Hire an Expert</p>
+        </TooltipContent>
+      </Tooltip>
+    ) : (
+      <Button
+        size="sm"
+        className="h-7 gap-1.5 rounded-full px-3 text-xs"
+        onClick={() => openHireExpert("sidebar")}
+      >
+        <UserRound className="h-3.5 w-3.5" />
+        Hire an Expert
+      </Button>
+    )
+  ) : null;
 
   return (
     <Sidebar collapsible="icon" variant="floating" className="app-sidebar-dock py-4">
@@ -394,7 +436,7 @@ export function AppSidebar() {
           </SidebarTrigger>
         </div>
 
-        {(provider === "stack" || provider === "local") && (
+        {showOrgSwitcher && (provider === "stack" || provider === "local") && (
           <div className={cn("mt-3 notranslate", isCollapsed && "hidden")} translate="no">
             <SidebarTeamSwitcher />
           </div>
@@ -402,7 +444,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className={cn("notranslate", isCollapsed && "px-0")} translate="no">
-        {NAV_SECTIONS.map((section, index) => {
+        {sections.map((section, index) => {
           const visibleItems = section.items.filter(
             (item) => !item.localOnly || provider === "local"
           );

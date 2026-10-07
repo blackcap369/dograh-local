@@ -41,4 +41,6 @@ next-env.d.ts
 .env.sentry-build-plugin
 
 .env
-.env.local
+.env.local# Alternate build/dev output dirs used when running two instances side by side
+/.next-build/
+/.next-dev-*/

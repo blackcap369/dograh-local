@@ -239,6 +239,110 @@ export type ActiveCallsResponse = {
 };
 
 /**
+ * AgencyClientDeleteImpact
+ *
+ * What deleting a business would destroy, and whether it is allowed.
+ *
+ * Returned ahead of any delete so the UI can show a breakdown rather than a
+ * confirm dialog that either works or 409s with nothing to explain it.
+ */
+export type AgencyClientDeleteImpact = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Workflow Count
+     */
+    workflow_count: number;
+    /**
+     * Run Count
+     */
+    run_count: number;
+    /**
+     * Phone Number Count
+     */
+    phone_number_count: number;
+    /**
+     * Member Count
+     */
+    member_count: number;
+    /**
+     * Deletable
+     */
+    deletable: boolean;
+    /**
+     * Blocking Reason
+     */
+    blocking_reason?: string | null;
+};
+
+/**
+ * AgencyClientRenameRequest
+ *
+ * Body for renaming a business.
+ *
+ * Name only. `provider_id` is the sole key organizations are looked up by, so
+ * accepting one here would be a cross-tenant collision and impersonation
+ * primitive -- and a rename that touched it would break the org stamped on every
+ * workflow and call record that references this business.
+ */
+export type AgencyClientRenameRequest = {
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
+ * AgencyClientSummary
+ *
+ * One business, as the Clients page renders it.
+ *
+ * `label` is `name or provider_id`. `organizations.name` is nullable by design --
+ * it post-dates the backfill and Stack-created orgs never set it -- so the
+ * fallback is the contract here rather than a defensive nicety.
+ */
+export type AgencyClientSummary = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Provider Id
+     */
+    provider_id: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Archived
+     */
+    archived?: boolean;
+    /**
+     * Workflow Count
+     */
+    workflow_count?: number;
+    /**
+     * Run Count
+     */
+    run_count?: number;
+    /**
+     * Phone Number Count
+     */
+    phone_number_count?: number;
+    /**
+     * Member Count
+     */
+    member_count?: number;
+};
+
+/**
  * AmbientNoiseConfigurationDefaults
  */
 export type AmbientNoiseConfigurationDefaults = {
@@ -15870,6 +15974,350 @@ export type GetNodeTypeApiV1NodeTypesNameGetResponses = {
 };
 
 export type GetNodeTypeApiV1NodeTypesNameGetResponse = GetNodeTypeApiV1NodeTypesNameGetResponses[keyof GetNodeTypeApiV1NodeTypesNameGetResponses];
+
+export type ListAgencyClientsApiV1AgencyClientsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/clients';
+};
+
+export type ListAgencyClientsApiV1AgencyClientsGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListAgencyClientsApiV1AgencyClientsGetError = ListAgencyClientsApiV1AgencyClientsGetErrors[keyof ListAgencyClientsApiV1AgencyClientsGetErrors];
+
+export type ListAgencyClientsApiV1AgencyClientsGetResponses = {
+    /**
+     * Response List Agency Clients Api V1 Agency Clients Get
+     *
+     * Successful Response
+     */
+    200: Array<AgencyClientSummary>;
+};
+
+export type ListAgencyClientsApiV1AgencyClientsGetResponse = ListAgencyClientsApiV1AgencyClientsGetResponses[keyof ListAgencyClientsApiV1AgencyClientsGetResponses];
+
+export type CreateAgencyClientApiV1AgencyClientsPostData = {
+    body: OrganizationCreateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/clients';
+};
+
+export type CreateAgencyClientApiV1AgencyClientsPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateAgencyClientApiV1AgencyClientsPostError = CreateAgencyClientApiV1AgencyClientsPostErrors[keyof CreateAgencyClientApiV1AgencyClientsPostErrors];
+
+export type CreateAgencyClientApiV1AgencyClientsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: OrganizationListItem;
+};
+
+export type CreateAgencyClientApiV1AgencyClientsPostResponse = CreateAgencyClientApiV1AgencyClientsPostResponses[keyof CreateAgencyClientApiV1AgencyClientsPostResponses];
+
+export type GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/clients/{organization_id}/delete-impact';
+};
+
+export type GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetError = GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetErrors[keyof GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetErrors];
+
+export type GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgencyClientDeleteImpact;
+};
+
+export type GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetResponse = GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetResponses[keyof GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetResponses];
+
+export type DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/clients/{organization_id}';
+};
+
+export type DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteError = DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteErrors[keyof DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteErrors];
+
+export type DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteResponse = DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteResponses[keyof DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteResponses];
+
+export type GetAgencyClientApiV1AgencyClientsOrganizationIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/clients/{organization_id}';
+};
+
+export type GetAgencyClientApiV1AgencyClientsOrganizationIdGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetAgencyClientApiV1AgencyClientsOrganizationIdGetError = GetAgencyClientApiV1AgencyClientsOrganizationIdGetErrors[keyof GetAgencyClientApiV1AgencyClientsOrganizationIdGetErrors];
+
+export type GetAgencyClientApiV1AgencyClientsOrganizationIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgencyClientSummary;
+};
+
+export type GetAgencyClientApiV1AgencyClientsOrganizationIdGetResponse = GetAgencyClientApiV1AgencyClientsOrganizationIdGetResponses[keyof GetAgencyClientApiV1AgencyClientsOrganizationIdGetResponses];
+
+export type RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchData = {
+    body: AgencyClientRenameRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/clients/{organization_id}';
+};
+
+export type RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchError = RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchErrors[keyof RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchErrors];
+
+export type RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: OrganizationListItem;
+};
+
+export type RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchResponse = RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchResponses[keyof RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchResponses];
+
+export type ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/clients/{organization_id}/archive';
+};
+
+export type ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostError = ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostErrors[keyof ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostErrors];
+
+export type ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostResponse = ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostResponses[keyof ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostResponses];
+
+export type UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/clients/{organization_id}/unarchive';
+};
+
+export type UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostError = UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostErrors[keyof UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostErrors];
+
+export type UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostResponse = UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostResponses[keyof UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostResponses];
 
 export type HealthApiV1HealthGetData = {
     body?: never;

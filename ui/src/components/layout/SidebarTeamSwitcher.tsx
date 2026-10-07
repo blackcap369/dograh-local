@@ -165,7 +165,6 @@ function LocalTeamSwitcher({
     org.name ?? org.provider_id;
 
   const orgList = organizations ?? [];
-  const hasChoices = orgList.length > 1;
   const activeOrganization = orgList.find(
     (org) => org.id === currentOrganizationId
   );
@@ -173,45 +172,31 @@ function LocalTeamSwitcher({
   return (
     <div className="relative space-y-1">
       {/*
-        The switcher itself is still hidden at zero organizations -- there is nothing
-        to select and no active business to name. The "New business" button is NOT
-        nested inside it: a user with exactly one business was previously shown a
-        read-only <span> rather than a <select>, so an affordance placed in here
-        would have been unreachable for exactly the people who need it most -- an
-        agency operator on their first client who is about to add their second.
+        Always render the dropdown when there's at least one organization.
+        This keeps the UI stable when organizations are added from the queue —
+        the switcher is already interactive and ready to switch immediately.
       */}
       {orgList.length > 0 && (
         <div className="flex items-center gap-2 rounded-lg border bg-background px-2 py-1.5 text-xs">
           <span className="shrink-0 text-muted-foreground">Org</span>
-          {hasChoices ? (
-            <select
-              // Controlled: without this the control displays the first organization
-              // in the list regardless of which one is actually active.
-              value={currentOrganizationId ?? ""}
-              onChange={(e) => void handleSelect(Number(e.target.value))}
-              aria-label="Select active organization"
-              disabled={isSwitching}
-              className="min-w-0 flex-1 truncate rounded bg-background text-xs text-foreground outline-none disabled:opacity-60"
-            >
-              {currentOrganizationId === null && (
-                <option value="">Select an organization</option>
-              )}
-              {orgList.map((org) => (
-                <option key={org.id} value={org.id}>
-                  {labelFor(org)}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <span
-              className="min-w-0 flex-1 truncate text-foreground"
-              title={
-                activeOrganization ? labelFor(activeOrganization) : undefined
-              }
-            >
-              {activeOrganization ? labelFor(activeOrganization) : "Unknown"}
-            </span>
-          )}
+          <select
+            // Controlled: without this the control displays the first organization
+            // in the list regardless of which one is actually active.
+            value={currentOrganizationId ?? ""}
+            onChange={(e) => void handleSelect(Number(e.target.value))}
+            aria-label="Select active organization"
+            disabled={isSwitching}
+            className="min-w-0 flex-1 truncate rounded bg-background text-xs text-foreground outline-none disabled:opacity-60"
+          >
+            {currentOrganizationId === null && (
+              <option value="">Select an organization</option>
+            )}
+            {orgList.map((org) => (
+              <option key={org.id} value={org.id}>
+                {labelFor(org)}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 
