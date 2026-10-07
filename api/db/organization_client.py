@@ -216,27 +216,36 @@ class OrganizationClient(BaseDBClient):
         Clients page renders a count for every business at once, and N+1 here is N
         round-trips on the screen the operator uses most.
 
-        Returns only organizations that have at least one row. Absence means zero --
-        not a failure -- so callers must zero-fill. Getting that backwards would
-        break the page the moment the operator creates their first client, which is
-        the most likely moment anyone is watching.
+        Returns a COMPLETE four-key dict for every requested organization --
+        keys are pre-zero-filled, then overwritten by whatever the grouped
+        queries find. A business can have members but no workflows, or runs but
+        no phone numbers, and a sparse dict there became a KeyError deep in the
+        delete guard: the shape of the result is part of the contract, not a
+        courtesy.
 
         `member_count` is reported but is deliberately not a delete blocker. The
-        creator is always a member, so a business with nothing else in it still has
-        one; blocking on it would make every freshly-created business undeletable
-        and the guard useless.
+        creator is always a member, so a business with nothing else in it still
+        has one; blocking on it would make every freshly-created business
+        undeletable and the guard useless.
         """
         if not organization_ids:
             # Four queries against an empty IN () is wasted work, and some drivers
             # reject the empty case outright.
             return {}
 
-        counts: dict[int, dict[str, int]] = {}
+        zeroed = {
+            "workflow_count": 0,
+            "run_count": 0,
+            "phone_number_count": 0,
+            "member_count": 0,
+        }
+        counts: dict[int, dict[str, int]] = {
+            organization_id: dict(zeroed) for organization_id in organization_ids
+        }
 
         async with self.async_session() as session:
             for key, model in (
                 ("workflow_count", WorkflowModel),
-                ("run_count", WorkflowRunModel),
                 ("phone_number_count", TelephonyPhoneNumberModel),
             ):
                 result = await session.execute(
@@ -245,7 +254,22 @@ class OrganizationClient(BaseDBClient):
                     .group_by(model.organization_id)
                 )
                 for org_id, count in result.all():
-                    counts.setdefault(org_id, {})[key] = int(count)
+                    counts[org_id][key] = int(count)
+
+            # `workflow_runs` carries no `organization_id` of its own -- a run is
+            # scoped to the org of the workflow it executed, the same join the
+            # isolation guards on the run routes rely on. Counting per org means
+            # joining through `workflows`, not reaching for a column that would
+            # raise at query-build time.
+            result = await session.execute(
+                select(WorkflowModel.organization_id, func.count(WorkflowRunModel.id))
+                .select_from(WorkflowRunModel)
+                .join(WorkflowModel, WorkflowRunModel.workflow_id == WorkflowModel.id)
+                .where(WorkflowModel.organization_id.in_(organization_ids))
+                .group_by(WorkflowModel.organization_id)
+            )
+            for org_id, count in result.all():
+                counts[org_id]["run_count"] = int(count)
 
             result = await session.execute(
                 select(
@@ -260,7 +284,7 @@ class OrganizationClient(BaseDBClient):
                 .group_by(organization_users_association.c.organization_id)
             )
             for org_id, count in result.all():
-                counts.setdefault(org_id, {})["member_count"] = int(count)
+                counts[org_id]["member_count"] = int(count)
 
         return counts
 

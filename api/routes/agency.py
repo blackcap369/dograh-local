@@ -150,29 +150,9 @@ async def list_agency_clients(
         [org.id for org in organizations]
     )
 
-    return [
-        AgencyClientSummary(
-            id=org.id,
-            provider_id=org.provider_id,
-            name=getattr(org, "name", None),
-            # The `name or provider_id` contract, in one place.
-            label=getattr(org, "name", None) or org.provider_id,
-            archived=bool(getattr(org, "archived", False)),
-            # A business with no rows has no group in the counts query, so absence
-            # means zero -- not a lookup failure. Getting this wrong would break
-            # the page the instant the operator creates their first client.
-            **(
-                counts.get(org.id)
-                or {
-                    "workflow_count": 0,
-                    "run_count": 0,
-                    "phone_number_count": 0,
-                    "member_count": 0,
-                }
-            ),
-        )
-        for org in organizations
-    ]
+    # The `name or provider_id` contract lives in `_summary_for`, shared with
+    # the single-client read so the two surfaces cannot drift.
+    return [_summary_for(org, counts.get(org.id)) for org in organizations]
 
 
 @router.get(
@@ -213,6 +193,24 @@ async def get_agency_client_delete_impact(
 # =============================================================================
 # Writes
 # =============================================================================
+
+
+@router.get("/clients/{organization_id}", response_model=AgencyClientSummary)
+async def get_agency_client(
+    organization_id: int,
+    user: UserModel = Depends(require_agency_operator),
+):
+    """One business by id, archived included.
+
+    The list route filters archived businesses because it *offers* places to
+    work; this detail route deliberately does not filter, because the operator
+    who archived a business must still be able to open it and restore it --
+    without an archived-readable read, unarchive would be reachable only
+    through raw API calls.
+    """
+    organization = await _require_organization(organization_id)
+    stats = await _stats_for(organization.id)
+    return _summary_for(organization, stats)
 
 
 @router.post("/clients", response_model=OrganizationListItem, status_code=201)
@@ -352,6 +350,35 @@ async def _require_organization(organization_id: int):
     if organization is None:
         raise HTTPException(status_code=404, detail="Not found")
     return organization
+
+
+def _summary_for(organization, counts: dict | None) -> AgencyClientSummary:
+    """One business as the Clients surfaces render it.
+
+    `label` is `name or provider_id` -- `organizations.name` is nullable by
+    design (it post-dates the backfill and Stack-created orgs never set it), so
+    the fallback is the contract here rather than a defensive nicety. A business
+    with no rows has no group in the counts query, so absence means zero -- not
+    a lookup failure. Getting that backwards would break the page the instant
+    the operator creates their first client, which is the most likely moment
+    anyone is watching.
+    """
+    return AgencyClientSummary(
+        id=organization.id,
+        provider_id=organization.provider_id,
+        name=getattr(organization, "name", None),
+        label=getattr(organization, "name", None) or organization.provider_id,
+        archived=bool(getattr(organization, "archived", False)),
+        **(
+            counts
+            or {
+                "workflow_count": 0,
+                "run_count": 0,
+                "phone_number_count": 0,
+                "member_count": 0,
+            }
+        ),
+    )
 
 
 async def _stats_for(organization_id: int) -> dict:

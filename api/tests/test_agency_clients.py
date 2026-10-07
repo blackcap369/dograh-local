@@ -644,3 +644,234 @@ class TestSwitcherStaysClean:
         assert delete_response.status_code == 404
         mock_db.rename_organization.assert_not_awaited()
         mock_db.delete_organization.assert_not_awaited()
+
+
+# =============================================================================
+# The real count queries (regression: mock-invisible SQL)
+# =============================================================================
+
+
+class TestResourceCountsQueries:
+    """The real resource-count queries must build and be org-scoped.
+
+    The route tests above mock `db_client` wholesale, which is exactly how a
+    query referencing a nonexistent column shipped green: `workflow_runs` has
+    no `organization_id` (runs scope through their workflow), so the committed
+    run-count query raised `AttributeError` the first time a real browser hit
+    the Clients page. These tests drive the actual
+    `get_organization_resource_counts` against a mocked session -- no database,
+    but the real query objects are built and inspected, which is where that bug
+    lived.
+    """
+
+    @pytest.mark.asyncio
+    async def test_count_queries_build_against_real_models(self):
+        from api.db.organization_client import OrganizationClient
+
+        captured = []
+
+        class _FakeResult:
+            def all(self):
+                return []
+
+        class _FakeSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def execute(self, query):
+                captured.append(query)
+                return _FakeResult()
+
+        client = OrganizationClient.__new__(OrganizationClient)
+        client.async_session = lambda *a, **k: _FakeSession()
+
+        counts = await client.get_organization_resource_counts([1, 2])
+
+        # No rows came back, so every count is zero -- but the dict itself must
+        # still be complete for every requested id. A sparse entry here became a
+        # KeyError deep in the delete guard for a business that had members but
+        # nothing else (the member query creates the entry; nothing else does).
+        assert counts == {
+            1: {
+                "workflow_count": 0,
+                "run_count": 0,
+                "phone_number_count": 0,
+                "member_count": 0,
+            },
+            2: {
+                "workflow_count": 0,
+                "run_count": 0,
+                "phone_number_count": 0,
+                "member_count": 0,
+            },
+        }
+        # workflows, workflow_runs (via join), phone numbers, members.
+        assert len(captured) == 4
+
+    @pytest.mark.asyncio
+    async def test_partial_rows_still_yield_complete_counts(self):
+        """A business with only members gets full keys, not a one-key dict.
+
+        Each grouped query contributes only the rows it finds, so a naive
+        build-the-dict-as-you-go approach leaves every other key missing. The
+        delete guard indexes three of the four keys unconditionally.
+        """
+        from api.db.organization_client import OrganizationClient
+
+        # Simulate the real pattern: only the member query finds a row.
+        responses = iter([[], [], [], [(7, 1)]])
+
+        class _FakeResult:
+            def __init__(self, rows):
+                self._rows = rows
+
+            def all(self):
+                return self._rows
+
+        class _FakeSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def execute(self, query):
+                return _FakeResult(next(responses))
+
+        client = OrganizationClient.__new__(OrganizationClient)
+        client.async_session = lambda *a, **k: _FakeSession()
+
+        counts = await client.get_organization_resource_counts([7])
+
+        assert counts == {
+            7: {
+                "workflow_count": 0,
+                "run_count": 0,
+                "phone_number_count": 0,
+                "member_count": 1,
+            }
+        }
+
+    @pytest.mark.asyncio
+    async def test_run_count_is_scoped_through_the_workflows_join(self):
+        """Run counts must come from workflow_runs JOIN workflows.
+
+        A run belongs to the org of the workflow it executed. The compiled SQL
+        is asserted directly: the join supplies the org column, and the WHERE
+        clause carries the organization predicate, so a run of another tenant
+        can never enter this business's numbers.
+        """
+        from api.db.organization_client import OrganizationClient
+
+        captured = []
+
+        class _FakeResult:
+            def all(self):
+                return []
+
+        class _FakeSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def execute(self, query):
+                captured.append(query)
+                return _FakeResult()
+
+        client = OrganizationClient.__new__(OrganizationClient)
+        client.async_session = lambda *a, **k: _FakeSession()
+
+        await client.get_organization_resource_counts([1, 2])
+
+        # Pick the run-count query by what it queries, not by position: the
+        # method issues one query per table and their order is not the contract.
+        run_queries = [
+            q
+            for q in captured
+            if "workflow_runs" in str(q.compile(compile_kwargs={"literal_binds": True}))
+        ]
+        assert len(run_queries) == 1, (
+            f"expected exactly one workflow_runs query, got {len(run_queries)}"
+        )
+        run_query_sql = str(
+            run_queries[0].compile(compile_kwargs={"literal_binds": True})
+        )
+        assert "JOIN workflows" in run_query_sql, (
+            f"run count must scope through the workflows join: {run_query_sql}"
+        )
+        assert "organization_id" in run_query_sql, (
+            f"run count has no organization predicate: {run_query_sql}"
+        )
+
+
+# =============================================================================
+# The single-client read
+# =============================================================================
+
+
+class TestAgencyClientGet:
+    """GET /agency/clients/{id} returns one business, archived included.
+
+    The list filters archived businesses because it *offers* places to work.
+    The detail read must not filter, because the operator who archived a
+    business still needs to open it and restore it -- without an
+    archived-readable read, unarchive exists only as a raw API call.
+    """
+
+    @pytest.mark.asyncio
+    async def test_get_returns_the_business_with_counts(self):
+        app = _make_agency_app()
+        client = TestClient(app)
+
+        mock_db = _patched_client()
+        mock_db.get_organization_by_id = AsyncMock(return_value=ACME)
+
+        with patch("api.routes.agency.db_client", mock_db):
+            response = client.get(f"/api/v1/agency/clients/{ACME.id}")
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["id"] == ACME.id
+        assert body["label"] == "Acme Dental"
+        assert body["workflow_count"] == 4
+        assert body["run_count"] == 128
+        assert body["archived"] is False
+
+    @pytest.mark.asyncio
+    async def test_archived_business_is_readable_for_restore(self):
+        """The archived row comes back from the detail read.
+
+        INITIATIVE is the archived business in the fixtures. The list excludes
+        it (pinned in TestSwitcherStaysClean); this read must not.
+        """
+        app = _make_agency_app()
+        client = TestClient(app)
+
+        mock_db = _patched_client()
+        mock_db.get_organization_by_id = AsyncMock(return_value=INITIATIVE)
+
+        with patch("api.routes.agency.db_client", mock_db):
+            response = client.get(f"/api/v1/agency/clients/{INITIATIVE.id}")
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["archived"] is True
+        assert body["label"] == "Initech"
+
+    @pytest.mark.asyncio
+    async def test_get_of_a_missing_business_is_404(self):
+        app = _make_agency_app()
+        client = TestClient(app)
+
+        mock_db = _patched_client()
+        mock_db.get_organization_by_id = AsyncMock(return_value=None)
+
+        with patch("api.routes.agency.db_client", mock_db):
+            response = client.get("/api/v1/agency/clients/4242")
+
+        assert response.status_code == 404, response.text
