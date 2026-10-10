@@ -183,6 +183,24 @@ Scope:
 
 Order: after V2.2 (white-label) or standalone on request.
 
+## V2.6 — Failed-run monitoring & alerting (agreed 2026-10-11)
+
+Must-have once businesses rely on agents: the agency must learn about a
+broken agent before the client does.
+
+Scope:
+
+1. Failed-run detection already exists as data (workflow_runs carry failure
+   state); what is missing is the agency-facing surface: a Creative-side
+   health view (failures in the last 24h per business, error rates) and
+   alerting.
+2. Alerting v1: email (or webhook) to the owner when a business records
+   N consecutive failed runs or an error-rate spike. Debounced per business
+   so a dead phone number does not spam.
+3. Detail: which agent, which business, the error, and a link to the run.
+
+Order: after V2.5.
+
 ## V2.4 — Production hardening checklist (before first real client)
 
 - `ENABLE_SIGNUP=false` until V2.1 (see boundary note) -- or immediately if
