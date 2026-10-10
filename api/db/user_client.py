@@ -356,15 +356,25 @@ class UserClient(BaseDBClient):
         """
         from sqlalchemy import select as sa_select
 
+        from api.db.models import StaffClientAssignmentModel
+
         async with self.async_session() as session:
-            query = (
-                sa_select(OrganizationModel)
-                .join(
-                    organization_users_association,
-                    OrganizationModel.id
-                    == organization_users_association.c.organization_id,
-                )
-                .where(organization_users_association.c.user_id == user_id)
+            # Two grants make a business "mine" (V2.1 unification, owner
+            # decision): an organization_users MEMBERSHIP, or a
+            # staff_client_assignments row. The assignment must grant
+            # Organization-mode access too -- a staff member who sees a client
+            # in Creative Mode has to be able to switch into it and work its
+            # agents, not just look at it from across the fence.
+            membership_ids = sa_select(
+                organization_users_association.c.organization_id
+            ).where(organization_users_association.c.user_id == user_id)
+            assignment_ids = sa_select(
+                StaffClientAssignmentModel.organization_id
+            ).where(StaffClientAssignmentModel.user_id == user_id)
+
+            query = sa_select(OrganizationModel).where(
+                OrganizationModel.id.in_(membership_ids)
+                | OrganizationModel.id.in_(assignment_ids)
             )
             # Trashed businesses never appear: the switcher would offer a
             # place to stand that is on its way out.

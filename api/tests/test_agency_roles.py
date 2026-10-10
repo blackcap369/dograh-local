@@ -402,3 +402,117 @@ class TestSwitchByRole:
             )
 
         assert response.status_code == 403, response.text
+
+
+# =============================================================================
+# Assignments grant Organization-mode access (the V2.1 unification)
+# =============================================================================
+
+
+class TestAssignmentsGrantOrganizationAccess:
+    """Seeing a client in Creative Mode must mean being able to work in it.
+
+    The owner's rule: what Creative shows, Organization offers. So the
+    switcher read and the switch check both accept a staff_client_assignments
+    row, not just an organization_users membership. One DB method
+    (get_organizations_for_user) drives both surfaces, so the unification is
+    a single source of truth.
+    """
+
+    @pytest.mark.asyncio
+    async def test_mine_includes_assigned_organizations(self):
+        """`/mine` (the switcher) offers assigned businesses to staff."""
+        app = _make_agency_app(STAFF_ID, "staff")
+        client = TestClient(app)
+
+        mock_db = _patched_db()
+        # The unified read returns memberships AND assignments.
+        mock_db.get_organizations_for_user = AsyncMock(return_value=[ACME, GLOBEX])
+        with patch("api.routes.organization.db_client", mock_db):
+            response = client.get("/api/v1/organizations/mine")
+
+        assert response.status_code == 200, response.text
+        ids = {o["id"] for o in response.json()}
+        assert ids == {ACME.id, GLOBEX.id}
+
+    @pytest.mark.asyncio
+    async def test_assigned_staff_can_switch_into_the_business(self):
+        """The switch accepts an assignment: staff work the agents they were
+        assigned, which is the entire point of assigning them."""
+        app = _make_agency_app(STAFF_ID, "staff")
+        client = TestClient(app)
+
+        mock_db = _patched_db()
+        mock_db.get_organizations_for_user = AsyncMock(return_value=[ACME])
+        mock_db.update_user_selected_organization = AsyncMock()
+        with patch("api.routes.organization.db_client", mock_db), patch(
+            "api.routes.organization.ensure_organization_bootstrapped", AsyncMock()
+        ), patch(
+            "api.routes.organization.get_organization_context",
+            AsyncMock(
+                return_value=SimpleNamespace(
+                    organization_id=ACME.id,
+                    organization_provider_id=ACME.provider_id,
+                    organization_name=ACME.name,
+                    model_services=SimpleNamespace(
+                        config_source="empty",
+                        has_model_configuration_v2=False,
+                        managed_service_version=None,
+                        uses_managed_service_v2=False,
+                    ),
+                )
+            ),
+        ):
+            response = client.post(
+                "/api/v1/organizations/switch", json={"organization_id": ACME.id}
+            )
+
+        assert response.status_code == 200, response.text
+
+    @pytest.mark.asyncio
+    async def test_the_switcher_query_unions_assignments_with_memberships(self):
+        """Client-layer proof: the compiled SQL reads BOTH grant tables.
+
+        A query that only joins organization_users would hide assigned
+        businesses from the switcher -- the exact bug reported in testing
+        (staff saw clients in Creative Mode but nothing in Organization
+        Mode).
+        """
+        from sqlalchemy import select
+
+        from api.db.user_client import UserClient
+
+        captured = {}
+
+        class _FakeResult:
+            def scalars(self):
+                return self
+
+            def all(self):
+                return []
+
+        class _FakeSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def execute(self, query):
+                captured["query"] = query
+                return _FakeResult()
+
+        client = UserClient.__new__(UserClient)
+        client.async_session = lambda *a, **k: _FakeSession()
+
+        await client.get_organizations_for_user(STAFF_ID)
+
+        compiled = str(
+            captured["query"].compile(compile_kwargs={"literal_binds": True})
+        )
+        assert "organization_users" in compiled, compiled
+        assert "staff_client_assignments" in compiled, (
+            "the switcher query must union assignments with memberships: "
+            + compiled
+        )
+        assert "deleted_at IS NULL" in compiled, compiled
