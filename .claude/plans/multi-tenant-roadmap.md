@@ -191,23 +191,26 @@ Scope:
 
 Order: after V2.2 (white-label) or standalone on request.
 
-## V2.6 — Failed-run monitoring & alerting (agreed 2026-10-11)
+## V2.6 — Failed-run monitoring & alerting — ✅ DELIVERED 2026-10-11 (commit 735b44a)
 
-Must-have once businesses rely on agents: the agency must learn about a
-broken agent before the client does.
-
-Scope:
-
-1. Failed-run detection already exists as data (workflow_runs carry failure
-   state); what is missing is the agency-facing surface: a Creative-side
-   health view (failures in the last 24h per business, error rates) and
-   alerting.
-2. Alerting v1: email (or webhook) to the owner when a business records
-   N consecutive failed runs or an error-rate spike. Debounced per business
-   so a dead phone number does not spam.
-3. Detail: which agent, which business, the error, and a link to the run.
-
-Order: after V2.5.
+- Failure detection: gathered_context carries `error` / `call_status=error`
+  (the shapes the failure paths already write). The completion task
+  evaluates every run best-effort: failed -> bump the open alert;
+  completed-successful -> auto-clear; in-flight -> neither.
+- Debounce by schema: run_failure_alerts has a partial unique index on open
+  rows, so concurrent failures bump one row (growing failure_count) instead
+  of stacking duplicates. Acknowledge frees the slot.
+- Surface: GET /agency/health (role-scoped: owner all, staff assignments,
+  scoped in the query) + POST .../failure-alerts/{id}/acknowledge
+  (ensure_business_access). The Creative dashboard renders a Business health
+  card -- open alerts with Acknowledge, per-business 24h failure counts,
+  latest failure with agent and error.
+- Live-verified E2E: real failed run -> evaluator created the alert ->
+  card rendered -> acknowledge cleared it (DB-checked). Two live-only bugs
+  fixed: jsonb `?` on a json column (now casts) and a nonexistent
+  Select.distinct_on (now .distinct(org) for DISTINCT ON).
+- Future upgrade path: email/webhook delivery of the same alerts (the rows
+  and evaluator already exist; only a notifier is missing).
 
 ## V2.4 — Production hardening checklist (before first real client)
 
