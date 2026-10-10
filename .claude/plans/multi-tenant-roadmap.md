@@ -95,21 +95,21 @@ Suggestions accepted into scope (owner asked what is left):
   deleting directly skips the queue -- an owner should not confirm to
   themselves, but the action lands in the audit log either way.
 
-### V2.1e — Recovery window ("trash") + purge
+### V2.1e — Recovery window ("trash") + purge — ✅ DELIVERED 2026-10-10
 
-- Delete becomes SOFT: `organizations.deleted_at` timestamp. Deleted
-  businesses vanish from every list and the switcher, remain fully
-  restorable (owner-only, from the trash section) for 10 days, and a nightly
-  ARQ job purges expired ones through the existing impact-guarded delete.
-- The dangerous part of soft delete is completeness: every organization list,
-  `/mine`, switch, counts, and membership query must exclude deleted rows.
-  The provider_id uniqueness stays satisfied because the row persists.
-- Cascade-destroyed children are untouched by a soft delete, so restore is
-  total. Permanent delete from trash stays impact-guarded (a business with
-  work history is offered "archive" instead).
-- **Database-level backup** (separate from trash -- protects against bugs, not
-  just deletes): nightly `pg_dump` + MinIO snapshot, 10-day retention, with a
-  tested restore. This is an ops item on the production host, in V2.4.
+Commit 53ee36e. Delete, owner-approval, and the UI all trash now; restore is
+a column write; the impact guard lives only at purge (`POST /agency/trash/{id}/purge`)
+and in the nightly ARQ job (00:17, TRASH_RETENTION_DAYS=10), which skips
+history-carrying businesses forever rather than destroying them on a timer.
+Scoping is query-layer: get_organization_by_id (include_deleted=False default),
+list_all_organizations, list_organizations_for_staff, get_organizations_for_user.
+Member selections cleared at trash; memberships only at purge. The detail
+page's stale pre-delete impact check was removed during live verification --
+it wrongly blocked trashing businesses with history.
+
+Still open on this workstream: **nightly `pg_dump` + MinIO snapshot with
+tested restore** on the production host (V2.4 ops item) -- the trash protects
+against deletes, the backup protects against everything else.
 
 **Done when:** owner enters any business; staff see and touch only assigned
 clients (verified at the API level, not just UI); a staff deletion request
