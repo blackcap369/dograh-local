@@ -41,6 +41,8 @@ from api.services.agency_access import (
 from api.services.auth.depends import get_user, require_agency_owner
 from api.utils.auth import hash_password
 
+from api.constants import FAILURE_WINDOW_HOURS
+
 router = APIRouter(
     prefix="/agency",
     tags=["agency"],
@@ -641,6 +643,102 @@ async def purge_trashed_client(
     await db_client.clear_selected_organization_references(organization.id)
     await db_client.clear_organization_users(organization.id)
     await db_client.delete_organization(organization.id)
+    return None
+
+
+# =============================================================================
+# Run health & failure alerts (V2.6) — the agency learns before the client
+# =============================================================================
+
+
+class RunHealthEntry(BaseModel):
+    organization_id: int
+    label: str
+    runs_24h: int
+    failed_24h: int
+    last_failure: Optional[dict] = None
+
+
+class FailureAlertEntry(BaseModel):
+    """One open failure alert, as the health card renders it."""
+
+    id: int
+    organization_id: int
+    business_label: str
+    workflow_id: int
+    agent_name: str
+    failure_count: int
+    last_error: Optional[str] = None
+    last_failed_run_id: Optional[int] = None
+    updated_at: Optional[datetime] = None
+
+
+class RunHealthResponse(BaseModel):
+    window_hours: int
+    businesses: list[RunHealthEntry]
+    alerts: list[FailureAlertEntry]
+
+
+@router.get("/health", response_model=RunHealthResponse)
+async def get_agency_run_health(user: UserModel = Depends(get_user)):
+    """Per-business run health over the last 24h, plus open failure alerts.
+
+    Role-scoped like the Clients list: owners see every business, staff see
+    only their assignments (scoped in the query). The health card on the
+    Creative dashboard is this endpoint's only consumer.
+    """
+    if is_agency_owner(user):
+        organizations = [
+            org
+            for org in await db_client.list_all_organizations()
+            if not getattr(org, "archived", False)
+        ]
+    else:
+        organizations = [
+            org
+            for org in await db_client.list_organizations_for_staff(user.id)
+            if not getattr(org, "archived", False)
+        ]
+
+    org_ids = [org.id for org in organizations]
+    health = await db_client.get_run_failure_health(
+        org_ids, FAILURE_WINDOW_HOURS
+    )
+    alerts = await db_client.list_active_failure_alerts(org_ids)
+    counts = await db_client.get_organization_resource_counts(org_ids)
+
+    labels = {org.id: _summary_for(org, counts.get(org.id)).label for org in organizations}
+    return RunHealthResponse(
+        window_hours=FAILURE_WINDOW_HOURS,
+        businesses=[
+            RunHealthEntry(
+                organization_id=org_id,
+                label=labels.get(org_id, f"org {org_id}"),
+                runs_24h=health.get(org_id, {}).get("runs_24h", 0),
+                failed_24h=health.get(org_id, {}).get("failed_24h", 0),
+                last_failure=health.get(org_id, {}).get("last_failure"),
+            )
+            for org_id in org_ids
+        ],
+        alerts=alerts,
+    )
+
+
+@router.post("/failure-alerts/{alert_id}/acknowledge", status_code=204)
+async def acknowledge_failure_alert(
+    alert_id: int,
+    user: UserModel = Depends(get_user),
+):
+    """Acknowledge an open failure alert. The agent stays monitored: the next
+    failure opens a fresh alert. Staff may acknowledge alerts for their
+    assigned businesses; owners for any."""
+    alert = await db_client.get_run_failure_alert_by_id(alert_id)
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    await ensure_business_access(user, alert.organization_id)
+    await db_client.acknowledge_failure_alert(
+        alert_id, alert.organization_id, user.id
+    )
     return None
 
 

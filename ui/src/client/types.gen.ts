@@ -2912,6 +2912,50 @@ export type ExternalPbxFieldMapping = {
 };
 
 /**
+ * FailureAlertEntry
+ *
+ * One open failure alert, as the health card renders it.
+ */
+export type FailureAlertEntry = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Organization Id
+     */
+    organization_id: number;
+    /**
+     * Business Label
+     */
+    business_label: string;
+    /**
+     * Workflow Id
+     */
+    workflow_id: number;
+    /**
+     * Agent Name
+     */
+    agent_name: string;
+    /**
+     * Failure Count
+     */
+    failure_count: number;
+    /**
+     * Last Error
+     */
+    last_error?: string | null;
+    /**
+     * Last Failed Run Id
+     */
+    last_failed_run_id?: number | null;
+    /**
+     * Updated At
+     */
+    updated_at?: string | null;
+};
+
+/**
  * FileDescriptor
  *
  * Descriptor for a single file in a batch upload request.
@@ -5790,6 +5834,52 @@ export type RumikTtsConfiguration = {
      * Language code for synthesis (reserved for provider compatibility).
      */
     language?: string | null;
+};
+
+/**
+ * RunHealthEntry
+ */
+export type RunHealthEntry = {
+    /**
+     * Organization Id
+     */
+    organization_id: number;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Runs 24H
+     */
+    runs_24h: number;
+    /**
+     * Failed 24H
+     */
+    failed_24h: number;
+    /**
+     * Last Failure
+     */
+    last_failure?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
+ * RunHealthResponse
+ */
+export type RunHealthResponse = {
+    /**
+     * Window Hours
+     */
+    window_hours: number;
+    /**
+     * Businesses
+     */
+    businesses: Array<RunHealthEntry>;
+    /**
+     * Alerts
+     */
+    alerts: Array<FailureAlertEntry>;
 };
 
 /**
@@ -17009,6 +17099,89 @@ export type PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostResponses =
 };
 
 export type PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostResponse = PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostResponses[keyof PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostResponses];
+
+export type GetAgencyRunHealthApiV1AgencyHealthGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/health';
+};
+
+export type GetAgencyRunHealthApiV1AgencyHealthGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetAgencyRunHealthApiV1AgencyHealthGetError = GetAgencyRunHealthApiV1AgencyHealthGetErrors[keyof GetAgencyRunHealthApiV1AgencyHealthGetErrors];
+
+export type GetAgencyRunHealthApiV1AgencyHealthGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RunHealthResponse;
+};
+
+export type GetAgencyRunHealthApiV1AgencyHealthGetResponse = GetAgencyRunHealthApiV1AgencyHealthGetResponses[keyof GetAgencyRunHealthApiV1AgencyHealthGetResponses];
+
+export type AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Alert Id
+         */
+        alert_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/failure-alerts/{alert_id}/acknowledge';
+};
+
+export type AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostError = AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostErrors[keyof AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostErrors];
+
+export type AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostResponse = AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostResponses[keyof AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostResponses];
 
 export type ListStaffApiV1AgencyStaffGetData = {
     body?: never;

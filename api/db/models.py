@@ -176,6 +176,60 @@ class ProviderKeyVaultModel(Base):
     )
 
 
+class RunFailureAlertModel(Base):
+    """An open failed-run alert for one agent (workflow) in one business.
+
+    Created on the first failed run and bumped on every subsequent one -- the
+    partial unique index on open rows IS the debounce, so a dying phone
+    number cannot spam the dashboard. A successful run sets resolved_at
+    (auto-clear); the owner acknowledging sets acknowledged_at. Either closes
+    the alert; both free the unique slot for a future alert.
+    """
+
+    __tablename__ = "run_failure_alerts"
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    workflow_id = Column(
+        Integer, ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False
+    )
+    first_failed_run_id = Column(Integer, nullable=True)
+    last_failed_run_id = Column(Integer, nullable=True)
+    failure_count = Column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
+    last_error = Column(Text, nullable=True)
+    acknowledged_at = Column(DateTime(timezone=True), nullable=True)
+    acknowledged_by = Column(Integer, nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_run_failure_alerts_open",
+            "organization_id",
+            "workflow_id",
+            unique=True,
+            postgresql_where=text(
+                "resolved_at IS NULL AND acknowledged_at IS NULL"
+            ),
+        ),
+        Index("ix_run_failure_alerts_org", "organization_id"),
+    )
+
+
 class DeletionRequestModel(Base):
     """A staff member's request to delete a client business, pending the owner.
 

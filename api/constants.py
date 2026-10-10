@@ -78,6 +78,9 @@ ENABLE_SIGNUP = os.getenv("ENABLE_SIGNUP", "true").lower() == "true"
 # How long a trashed (soft-deleted) business stays restorable before the
 # nightly purge may hard-delete it -- and only if it passes the impact guard.
 # Businesses with work history are never purged by the timer at all.
+# Failed-run health window (V2.6): the run-health view counts failures in
+# the trailing window; alerting is per-failure, debounced per agent.
+FAILURE_WINDOW_HOURS = int(os.getenv("FAILURE_WINDOW_HOURS", "24"))
 TRASH_RETENTION_DAYS = int(os.getenv("TRASH_RETENTION_DAYS", "10"))
 TRASH_RETENTION = timedelta(days=TRASH_RETENTION_DAYS)
 OWNER_EMAILS = {

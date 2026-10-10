@@ -5,10 +5,13 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import {
+  acknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePost,
+  getAgencyRunHealthApiV1AgencyHealthGet,
   listAgencyClientsApiV1AgencyClientsGet,
 } from "@/client/sdk.gen";
-import type { AgencyClientSummary } from "@/client/types.gen";
+import type { AgencyClientSummary, RunHealthResponse } from "@/client/types.gen";
 import { CreativePageGate } from "@/components/creative/CreativePageGate";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -32,17 +35,25 @@ function DashboardContent() {
   const { user } = useAuth();
   const owner = isAgencyOwner(user);
   const [clients, setClients] = useState<AgencyClientSummary[]>([]);
+  const [health, setHealth] = useState<RunHealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchClients = async () => {
     try {
       setLoading(true);
-      const response = await listAgencyClientsApiV1AgencyClientsGet();
-      if (response.error) {
-        throw new Error(detailFromError(response.error, "Failed to load clients"));
+      const [clientsResponse, healthResponse] = await Promise.all([
+        listAgencyClientsApiV1AgencyClientsGet(),
+        getAgencyRunHealthApiV1AgencyHealthGet(),
+      ]);
+      if (clientsResponse.error) {
+        throw new Error(detailFromError(clientsResponse.error, "Failed to load clients"));
       }
-      setClients(response.data ?? []);
+      setClients(clientsResponse.data ?? []);
+      // Health is an enhancement: a failed load must not blank the dashboard.
+      if (!healthResponse.error) {
+        setHealth(healthResponse.data ?? null);
+      }
       setError(null);
     } catch (err) {
       const message =
@@ -51,6 +62,22 @@ function DashboardContent() {
       toast.error(message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAcknowledgeAlert = async (alertId: number) => {
+    try {
+      const response =
+        await acknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePost({
+          path: { alert_id: alertId },
+        });
+      if (response.error) {
+        throw new Error(detailFromError(response.error, "Could not acknowledge"));
+      }
+      toast.success("Alert acknowledged");
+      await fetchClients();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not acknowledge");
     }
   };
 
@@ -137,6 +164,73 @@ function DashboardContent() {
           </Card>
         ))}
       </div>
+
+      {health && (health.alerts.length > 0 || health.businesses.some((b) => b.failed_24h > 0)) && (
+        <Card className="border-amber-500/40">
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                Business health
+                <Badge variant="destructive">
+                  {health.alerts.length > 0
+                    ? `${health.alerts.length} open alert${health.alerts.length > 1 ? "s" : ""}`
+                    : "failures in the last 24h"}
+                </Badge>
+              </CardTitle>
+              <CardDescription>
+                Failed runs in the last {health.window_hours} hours, per
+                business. Fix the cause; the alert auto-clears on the next
+                successful run.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {health.alerts.map((alert) => (
+              <div
+                key={alert.id}
+                className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">
+                    {alert.agent_name}{" "}
+                    <span className="text-muted-foreground">
+                      — {alert.business_label}
+                    </span>
+                  </p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    {alert.failure_count} failed run
+                    {alert.failure_count > 1 ? "s" : ""}
+                    {alert.last_error ? ` — ${alert.last_error}` : ""}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleAcknowledgeAlert(alert.id)}
+                >
+                  Acknowledge
+                </Button>
+              </div>
+            ))}
+            {health.businesses
+              .filter((b) => b.failed_24h > 0)
+              .map((b) => (
+                <div
+                  key={b.organization_id}
+                  className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-3 text-sm"
+                >
+                  <span className="font-medium">{b.label}</span>
+                  <span className="text-muted-foreground">
+                    {b.failed_24h} failed / {b.runs_24h} runs in {health.window_hours}h
+                    {b.last_failure?.agent_name
+                      ? ` — last: ${b.last_failure.agent_name}`
+                      : ""}
+                  </span>
+                </div>
+              ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0">
