@@ -133,6 +133,49 @@ class StaffClientAssignmentModel(Base):
     )
 
 
+class ProviderKeyVaultModel(Base):
+    """One saved API key in an organization's vault.
+
+    The vault exists so the Models page and the workflow Override dialog can
+    pick a stored key (by alias) instead of retyping it every time. Keys are
+    encrypted by the service layer before they reach this table and are never
+    returned to any client after saving -- list responses carry only a masked
+    preview. A configuration that references a saved key does so by
+    `vault:{id}`, resolved against the caller's organization at save time, so
+    a cross-tenant reference is impossible by construction.
+    """
+
+    __tablename__ = "provider_key_vault"
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # llm | tts | stt | embeddings | realtime -- the service the key belongs to.
+    service = Column(String(32), nullable=False)
+    # The provider slug as the model-config schemas name it (e.g. "openai").
+    provider = Column(String(64), nullable=False)
+    alias = Column(String(100), nullable=False)
+    encrypted_key = Column(Text, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "service",
+            "provider",
+            "alias",
+            name="uq_provider_key_vault_org_service_provider_alias",
+        ),
+        Index("ix_provider_key_vault_org", "organization_id"),
+    )
+
+
 class DeletionRequestModel(Base):
     """A staff member's request to delete a client business, pending the owner.
 

@@ -27,6 +27,7 @@ from api.schemas.workflow import WorkflowRunResponseSchema
 from api.schemas.workflow_configurations import WorkflowConfigurationDefaults
 from api.sdk_expose import sdk_expose
 from api.services.auth.depends import get_user
+from api.services.provider_key_vault import resolve_vault_refs_in_config
 from api.services.configuration.ai_model_configuration import (
     WORKFLOW_MODEL_CONFIGURATION_V2_OVERRIDE_KEY,
     check_for_masked_keys_in_ai_model_configuration_v2,
@@ -1234,6 +1235,19 @@ async def update_workflow(
                 workflow_configurations,
                 existing_configs,
             )
+            # Resolve `vault:{id}` saved-key references before key enrichment,
+            # so overrides saved with vault references behave like overrides
+            # saved with typed keys. Org-scoped: foreign references 422.
+            try:
+                workflow_configurations["model_overrides"] = (
+                    await resolve_vault_refs_in_config(
+                        workflow_configurations["model_overrides"],
+                        user.selected_organization_id,
+                        db_client,
+                    )
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc))
             resolved_config = await get_resolved_ai_model_configuration(
                 organization_id=user.selected_organization_id,
             )

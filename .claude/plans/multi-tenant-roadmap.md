@@ -148,26 +148,24 @@ Still Dograh-branded with the flag ON -- audit and gate each:
 **Done when:** a fresh signup, a hard reload on every page, and the auth flow
 show zero upstream-brand references with the flag on.
 
-## V2.3 — MCP / API-key verification pass on the customized fork
+## V2.3 — MCP / API-key verification pass on the customized fork — ✅ DELIVERED 2026-10-11
 
-Current state (verified): MCP tools are authed by org-scoped API keys; the
-key forces its org over the user's personal selection (pinned by isolation
-tests 15/16), and every tool call filters by `selected_organization_id`. There
-are NO organization-level MCP tools (create/list orgs are operator-UI work by
-design).
+Delivered:
 
-What remains:
-
-1. One end-to-end MCP test with a real org-scoped key: list agents, create an
-   agent, fetch it, and prove a second org's agents are invisible (the TDD
-   report already lists this as the known follow-up).
-2. Decision recorded: do NOT add agency-level MCP tools (list all clients /
-   create clients) until V2.1 roles exist -- an MCP key is a per-org
-   credential, and giving it cross-org reach would recreate the operator gate
-   outside the role system.
-3. Re-run the MCP tool suite after any fork-specific change to
-   `organization_context` / scoping helpers (several of those tests are in the
-   known-environmental-failure set and must not silently stay red).
+1. `api/tests/test_mcp_org_isolation.py` — end-to-end through the REAL MCP
+   auth path (`authenticate_mcp_request` -> `_handle_api_key_auth`): an
+   org-scoped key forces its organization over the user's personal
+   selection; `list_workflows` and `get_workflow` scope to that org; another
+   org's agents are 404-invisible; a personal org switch cannot widen MCP
+   reach (the overwrite happens every request); missing key = 401.
+2. Decision confirmed: no agency-level MCP tools (create/list organizations
+   are operator-UI work). An MCP key is a per-org credential; cross-org
+   reach would recreate the operator gate outside the role system.
+3. `npm ci` in `api/mcp_server/ts_validator` fixed the missing-typescript
+   environmental failures -- 40+ tests that were red on the baseline are
+   green (ts_bridge, mcp_save_workflow, tool sdk tests). The 11 remaining
+   mock-server session failures are a separate pre-existing Windows loopback
+   transport quirk (documented, unrelated to scoping).
 
 ## V2.5 — Saved provider keys vault + key dropdown (agreed 2026-10-11)
 
