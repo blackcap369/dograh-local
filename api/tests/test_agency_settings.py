@@ -459,35 +459,16 @@ class TestDeletionRequests:
         assert response.status_code == 403, response.text
 
     @pytest.mark.asyncio
-    async def test_approve_runs_the_guarded_delete(self):
-        """Approval performs the same delete a direct owner action would:
-        selection cleanup, membership cleanup, then the row -- and it is
-        impact-guarded, so the empty fixture business goes through."""
+    async def test_approve_trashes_the_business(self):
+        """Approval soft-deletes: member selections cleared, row trashed,
+        nothing destroyed. History no longer changes the outcome -- the
+        impact guard moved to the purge, where destruction is real."""
         app = _make_app(OWNER_ID, "owner")
         client = TestClient(app)
 
         mock_db = _patched_db()
         mock_db.get_deletion_request = AsyncMock(return_value=REQUEST_ROW)
-        mock_db.resolve_deletion_request = AsyncMock(
-            return_value=SimpleNamespace(
-                id=REQUEST_ROW.id,
-                organization_id=ACME.id,
-                requested_by=STAFF_ID,
-                status="approved",
-                reason=REQUEST_ROW.reason,
-                created_at=None,
-            )
-        )
-        mock_db.get_organization_resource_counts = AsyncMock(
-            return_value={
-                ACME.id: {
-                    "workflow_count": 0,
-                    "run_count": 0,
-                    "phone_number_count": 0,
-                    "member_count": 1,
-                }
-            }
-        )
+        mock_db.mark_organization_deleted = AsyncMock(return_value=ACME)
         with patch("api.routes.agency.db_client", mock_db), patch(
             "api.db.db_client", mock_db
         ):
@@ -495,34 +476,32 @@ class TestDeletionRequests:
 
         assert response.status_code == 200, response.text
         assert response.json()["status"] == "approved"
-        mock_db.delete_organization.assert_awaited_once_with(ACME.id)
+        mock_db.mark_organization_deleted.assert_awaited_once_with(ACME.id)
+        mock_db.delete_organization.assert_not_awaited(), (
+            "approval must trash, never destroy"
+        )
+        mock_db.clear_organization_users.assert_not_awaited(), (
+            "memberships survive the trash for restore"
+        )
 
     @pytest.mark.asyncio
-    async def test_approve_refused_for_a_business_with_history(self):
-        """The impact guard is not bypassed by the approval path: a business
-        with runs is refused with the counts, and the request stays pending
-        so the owner can reject it or archive instead."""
+    async def test_approve_trashes_even_a_business_with_history(self):
+        """The old approval-time impact guard is gone: trashing is reversible,
+        so history is not a reason to refuse. A business with 128 runs is
+        trashed exactly like an empty one."""
         app = _make_app(OWNER_ID, "owner")
         client = TestClient(app)
 
         mock_db = _patched_db()
         mock_db.get_deletion_request = AsyncMock(return_value=REQUEST_ROW)
-        mock_db.get_organization_resource_counts = AsyncMock(
-            return_value={
-                ACME.id: {
-                    "workflow_count": 4,
-                    "run_count": 128,
-                    "phone_number_count": 2,
-                    "member_count": 3,
-                }
-            }
-        )
+        mock_db.mark_organization_deleted = AsyncMock(return_value=ACME)
         with patch("api.routes.agency.db_client", mock_db), patch(
             "api.db.db_client", mock_db
         ):
             response = client.post("/api/v1/agency/deletion-requests/1/approve")
 
-        assert response.status_code == 409, response.text
+        assert response.status_code == 200, response.text
+        mock_db.mark_organization_deleted.assert_awaited_once_with(ACME.id)
         mock_db.delete_organization.assert_not_awaited()
 
     @pytest.mark.asyncio

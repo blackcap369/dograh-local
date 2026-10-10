@@ -330,15 +330,15 @@ class TestAgencyClientRename:
 
 
 class TestAgencyClientDeleteGuard:
-    """Delete is refused for any business that has done real work.
+    """Delete trashes a business: reversible, so nothing is guarded here.
 
-    The foreign keys to `organizations.id` are inconsistent: keys, model
-    configurations, telephony configs, phone numbers, and call records CASCADE, so
-    they are destroyed silently; workflows, folders, campaigns, and the membership
-    table carry no `ondelete` at all, so they either raise or are left orphaned; and
-    `users.selected_organization_id` has no `ondelete` either, which blocks the
-    delete outright. A single unfiltered DELETE button would therefore destroy a
-    client's recordings and call history while leaving their workflows dangling.
+    The V2.1e recovery trash moved the impact guard off delete and onto the
+    purge: trashing destroys nothing (every default lookup filters the row
+    out), so a business with work history is trashed exactly like an empty
+    one. What delete must still do is clear member selections -- anyone left
+    standing in a trashed business would point at a row the default lookups
+    refuse to resolve -- and it must NOT clear memberships or the row, so a
+    restore brings everything back.
     """
 
     @pytest.mark.asyncio
@@ -359,71 +359,54 @@ class TestAgencyClientDeleteGuard:
         assert body["deletable"] is False
 
     @pytest.mark.asyncio
-    async def test_delete_refused_for_a_business_with_work(self):
-        """Acme has 4 workflows and 128 call runs. Deleting it would be data loss."""
-        app = _make_agency_app()
-        client = TestClient(app)
+    async def test_delete_trashes_a_business_with_work(self):
+        """Acme has 4 workflows and 128 call runs. Trashing it is still safe.
 
-        mock_db = _patched_client()
-        mock_db.get_organization_by_id = AsyncMock(return_value=ACME)
-        mock_db.delete_organization = AsyncMock()
-
-        with patch("api.routes.agency.db_client", mock_db):
-            response = client.delete(f"/api/v1/agency/clients/{ACME.id}")
-
-        assert response.status_code == 409, response.text
-        mock_db.delete_organization.assert_not_awaited(), (
-            "a refused delete must not touch the row"
-        )
-
-    @pytest.mark.asyncio
-    async def test_refusal_explains_what_is_blocking_it(self):
-        """A 409 with no body is unactionable. The counts come back with it."""
-        app = _make_agency_app()
-        client = TestClient(app)
-
-        mock_db = _patched_client()
-        mock_db.get_organization_by_id = AsyncMock(return_value=ACME)
-        mock_db.delete_organization = AsyncMock()
-
-        with patch("api.routes.agency.db_client", mock_db):
-            response = client.delete(f"/api/v1/agency/clients/{ACME.id}")
-
-        detail = response.json()["detail"]
-        assert detail["workflow_count"] == 4
-        assert detail["run_count"] == 128
-        assert "archive" in str(detail).lower(), (
-            "the refusal should point the operator at archiving instead"
-        )
-
-    @pytest.mark.asyncio
-    async def test_delete_succeeds_for_an_empty_business(self):
-        """A business that was created and abandoned can be removed outright.
-
-        The point of the guard is to stop irreversible loss, not to make the wrong
-        onboarding permanent. A business with no agents, no calls, and no numbers
-        holds nothing worth keeping.
+        The old impact guard lived here because delete destroyed data. It
+        destroys nothing now -- the row and its history survive in the trash
+        -- so history is no longer a reason to refuse. The guard moved to the
+        purge, where destruction is real (see TestTrashPurge).
         """
         app = _make_agency_app()
         client = TestClient(app)
 
         mock_db = _patched_client()
+        mock_db.get_organization_by_id = AsyncMock(return_value=ACME)
+        mock_db.mark_organization_deleted = AsyncMock(return_value=ACME)
+
+        with patch("api.routes.agency.db_client", mock_db):
+            response = client.delete(f"/api/v1/agency/clients/{ACME.id}")
+
+        assert response.status_code in (200, 204), response.text
+        mock_db.mark_organization_deleted.assert_awaited_once_with(ACME.id)
+        mock_db.delete_organization.assert_not_awaited(), (
+            "trash must never hard-delete the row"
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_succeeds_for_an_empty_business(self):
+        """The empty-business case trashes identically to the full one."""
+        app = _make_agency_app()
+        client = TestClient(app)
+
+        mock_db = _patched_client()
         mock_db.get_organization_by_id = AsyncMock(return_value=GLOBEX)
-        mock_db.delete_organization = AsyncMock(return_value=GLOBEX)
+        mock_db.mark_organization_deleted = AsyncMock(return_value=GLOBEX)
 
         with patch("api.routes.agency.db_client", mock_db):
             response = client.delete(f"/api/v1/agency/clients/{GLOBEX.id}")
 
         assert response.status_code in (200, 204), response.text
-        mock_db.delete_organization.assert_awaited_once_with(GLOBEX.id)
+        mock_db.mark_organization_deleted.assert_awaited_once_with(GLOBEX.id)
 
     @pytest.mark.asyncio
-    async def test_delete_clears_member_selection_first(self):
-        """`users.selected_organization_id` has no `ondelete`, so it blocks the delete.
+    async def test_delete_clears_member_selection(self):
+        """`users.selected_organization_id` must not keep pointing at a trashed row.
 
-        A member still pointing at a business being removed would otherwise abort
-        the delete on a foreign-key violation -- or, worse, succeed and leave them
-        pointing at a row that no longer exists.
+        The default lookups refuse a trashed business, so a member still standing
+        in it would turn every subsequent request into a failure. Selections are
+        cleared at trash time; memberships are not, because restore has to bring
+        the team back with the business.
         """
         app = _make_agency_app()
         client = TestClient(app)
@@ -431,7 +414,7 @@ class TestAgencyClientDeleteGuard:
         mock_db = _patched_client()
         mock_db.get_organization_by_id = AsyncMock(return_value=GLOBEX)
         mock_db.clear_selected_organization_references = AsyncMock()
-        mock_db.delete_organization = AsyncMock(return_value=GLOBEX)
+        mock_db.mark_organization_deleted = AsyncMock(return_value=GLOBEX)
 
         with patch("api.routes.agency.db_client", mock_db):
             client.delete(f"/api/v1/agency/clients/{GLOBEX.id}")
@@ -441,12 +424,13 @@ class TestAgencyClientDeleteGuard:
         )
 
     @pytest.mark.asyncio
-    async def test_delete_clears_membership_rows_first(self):
-        """`organization_users` has no `ondelete` either, so its rows block the delete.
+    async def test_delete_keeps_membership_rows_for_restore(self):
+        """Trash must not touch `organization_users`.
 
-        Membership rows left behind after the organization row is gone would point
-        every former member's `/mine` lookup at a business that no longer exists.
-        They must be removed explicitly, before the row itself is deleted.
+        The entire point of the recovery trash is that restore brings the
+        business back exactly as it was -- its member list included. Clearing
+        memberships here would make restore a partial recovery; the membership
+        cleanup belongs to the purge, where the business is really leaving.
         """
         app = _make_agency_app()
         client = TestClient(app)
@@ -455,49 +439,13 @@ class TestAgencyClientDeleteGuard:
         mock_db.get_organization_by_id = AsyncMock(return_value=GLOBEX)
         mock_db.clear_selected_organization_references = AsyncMock()
         mock_db.clear_organization_users = AsyncMock()
-        mock_db.delete_organization = AsyncMock(return_value=GLOBEX)
+        mock_db.mark_organization_deleted = AsyncMock(return_value=GLOBEX)
 
         with patch("api.routes.agency.db_client", mock_db):
             client.delete(f"/api/v1/agency/clients/{GLOBEX.id}")
 
-        mock_db.clear_organization_users.assert_awaited_once_with(GLOBEX.id)
-
-    @pytest.mark.asyncio
-    async def test_delete_order_is_selection_then_memberships_then_row(self):
-        """Cleanup precedes the delete; the row goes last.
-
-        Membership and selection cleanup both run against rows that reference the
-        organization, so either of them arriving after `delete_organization` would
-        race the foreign keys. The awaited order is the contract.
-        """
-        app = _make_agency_app()
-        client = TestClient(app)
-
-        mock_db = _patched_client()
-        mock_db.get_organization_by_id = AsyncMock(return_value=GLOBEX)
-        mock_db.clear_selected_organization_references = AsyncMock()
-        mock_db.clear_organization_users = AsyncMock()
-        mock_db.delete_organization = AsyncMock(return_value=GLOBEX)
-
-        with patch("api.routes.agency.db_client", mock_db):
-            client.delete(f"/api/v1/agency/clients/{GLOBEX.id}")
-
-        manager = mock_db.mock_calls
-        order = [
-            name.split("/")[-1]
-            for name, _args, _kwargs in manager
-            if name
-            in (
-                "clear_selected_organization_references",
-                "clear_organization_users",
-                "delete_organization",
-            )
-        ]
-        assert order == [
-            "clear_selected_organization_references",
-            "clear_organization_users",
-            "delete_organization",
-        ], f"cleanup steps ran out of order: {order}"
+        mock_db.clear_organization_users.assert_not_awaited()
+        mock_db.delete_organization.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_delete_of_a_missing_business_is_404(self):

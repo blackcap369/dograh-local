@@ -29,7 +29,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from api.constants import AUTH_PROVIDER, OWNER_EMAILS
+from api.constants import AUTH_PROVIDER, OWNER_EMAILS, TRASH_RETENTION
 from api.db import db_client
 from api.db.models import DeletionRequestModel, UserModel
 from api.schemas.organization import OrganizationCreateRequest, OrganizationListItem
@@ -321,42 +321,30 @@ async def delete_agency_client(
     organization_id: int,
     user: UserModel = Depends(require_agency_owner),
 ):
-    """Delete a business outright. Owner-only; refused if it holds history.
+    """Move a business to the trash. Owner-only, reversible by design.
 
     Staff deletes go through `POST .../deletion-request` and land in the
-    owner's queue -- this route is the owner's own action, and it stays
-    impact-guarded exactly as before: a business with work history is refused
-    (409, with the counts) and pointed at archiving.
+    owner's queue; this route is the owner's own action and the approval
+    path's destination. Trashing is NOT impact-guarded, because it destroys
+    nothing: every default lookup filters the business out (lists, switcher,
+    membership), while the row and everything pointing at it stay intact for
+    the restore window. Permanent destruction is a separate, guarded act
+    (`POST /agency/trash/{id}/purge` and the nightly purge job), and a
+    business with work history is never destroyed by the timer -- it simply
+    stays restorable forever.
 
-    Returns 409 with the blocking counts so the refusal is actionable rather than a
-    bare status code.
+    `users.selected_organization_id` is cleared for anyone still standing in
+    the business: leaving it would point them at a row the default lookups
+    refuse to resolve. Membership rows are kept so restore brings back who
+    belonged.
     """
     organization = await _require_organization(organization_id)
-    stats = await _stats_for(organization.id)
-
-    blocking = [k for k in _DELETE_SAFE_THRESHOLDS if stats[k] > 0]
-    if blocking:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": (
-                    "This business has work history and cannot be deleted. "
-                    "Archive it instead -- archiving hides it everywhere but keeps "
-                    "every agent, call, and recording, and is reversible."
-                ),
-                **stats,
-            },
-        )
-
-    # `users.selected_organization_id` has no `ondelete`, so a member still pointing
-    # here would abort the delete on a foreign-key violation -- or leave them
-    # pointing at a row that no longer exists. Clear it first.
     await db_client.clear_selected_organization_references(organization.id)
-    # Same story for the membership table: `organization_users` carries no
-    # `ondelete` either, so its rows must go explicitly or they survive as
-    # orphans pointing at a business that no longer exists.
-    await db_client.clear_organization_users(organization.id)
-    await db_client.delete_organization(organization.id)
+    trashed = await db_client.mark_organization_deleted(organization.id)
+    if trashed is None:
+        # Raced with another delete of the same row; the caller's outcome
+        # ("no longer an active business") already holds.
+        raise HTTPException(status_code=404, detail="Not found")
     return None
 
 
@@ -481,12 +469,13 @@ async def approve_deletion_request(
     request_id: int,
     user: UserModel = Depends(require_agency_owner),
 ):
-    """Approve a deletion request: the guarded delete actually runs.
+    """Approve a deletion request: the business is moved to the trash.
 
-    The impact guard applies here exactly as it does for a direct owner
-    delete -- a business with work history is refused with 409 and the counts,
-    and the request stays pending so the owner can reject it or archive the
-    business instead.
+    Approval trashes rather than destroys -- the same reversible action a
+    direct owner delete performs -- so there is no impact guard here anymore:
+    the guard exists because destruction was irreversible, and trashing is
+    not. Permanent removal is the purge (owner-initiated or the nightly job)
+    and remains impact-guarded there.
     """
     request = await db_client.get_deletion_request(request_id)
     if request is None:
@@ -498,32 +487,16 @@ async def approve_deletion_request(
         )
 
     organization = await _require_organization(request.organization_id)
-    stats = await _stats_for(organization.id)
-    blocking = [k for k in _DELETE_SAFE_THRESHOLDS if stats[k] > 0]
-    if blocking:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": (
-                    "This business has work history and cannot be deleted. "
-                    "Reject the request and archive the business instead."
-                ),
-                **stats,
-            },
-        )
-
     requester = (
         await db_client.get_user_by_id(request.requested_by)
         if request.requested_by
         else None
     )
     await db_client.clear_selected_organization_references(organization.id)
-    await db_client.clear_organization_users(organization.id)
-    await db_client.delete_organization(organization.id)
-    # The delete CASCADEs the request row away (organization_id is ondelete
-    # CASCADE), so there is nothing left to update -- the approval is the
-    # deletion itself. The response is built from the request as it was
-    # loaded, with the decision stamped on without mutating the row.
+    await db_client.mark_organization_deleted(organization.id)
+    # The trash is the outcome; resolve the request so the queue clears. The
+    # request row survives (the business row does too), which is the audit
+    # trail of the decision.
     return _request_summary(request, organization, requester, status="approved")
 
 
@@ -537,6 +510,138 @@ async def reject_deletion_request(
 ):
     """Reject a deletion request. The business is untouched."""
     return await _resolve_deletion_request(request_id, "rejected", user)
+
+
+# =============================================================================
+# The trash (owner only): what soft delete produced, and its two exits
+# =============================================================================
+
+
+class TrashedClientSummary(BaseModel):
+    """One trashed business, as the owner's trash renders it."""
+
+    id: int
+    provider_id: str
+    label: str
+    archived: bool = False
+    deleted_at: Optional[datetime] = None
+    # When the nightly purge may hard-delete it. None means "never": the
+    # business has work history, so the impact guard will refuse the purge
+    # forever and it stays restorable until manually purged from a backup.
+    purge_eligible_at: Optional[datetime] = None
+    workflow_count: int = 0
+    run_count: int = 0
+    phone_number_count: int = 0
+    member_count: int = 0
+
+
+async def _require_trashed_organization(organization_id: int):
+    """Load a business by id, requiring that it actually is trashed."""
+    organization = await db_client.get_organization_by_id(
+        organization_id, include_deleted=True
+    )
+    if organization is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    if organization.deleted_at is None:
+        raise HTTPException(status_code=404, detail="That business is not in the trash")
+    return organization
+
+
+def _trashed_summary(organization, counts: dict | None) -> TrashedClientSummary:
+    has_history = any(
+        (counts or {}).get(k, 0) > 0 for k in _DELETE_SAFE_THRESHOLDS
+    )
+    deleted_at = getattr(organization, "deleted_at", None)
+    return TrashedClientSummary(
+        id=organization.id,
+        provider_id=organization.provider_id,
+        label=getattr(organization, "name", None) or organization.provider_id,
+        archived=bool(getattr(organization, "archived", False)),
+        deleted_at=deleted_at,
+        purge_eligible_at=(
+            None
+            if has_history or deleted_at is None
+            else deleted_at + TRASH_RETENTION
+        ),
+        **(
+            counts
+            or {
+                "workflow_count": 0,
+                "run_count": 0,
+                "phone_number_count": 0,
+                "member_count": 0,
+            }
+        ),
+    )
+
+
+@router.get("/trash", response_model=list[TrashedClientSummary])
+async def list_trashed_clients(user: UserModel = Depends(require_agency_owner)):
+    """The owner's trash: soft-deleted businesses, newest first.
+
+    Counts are included so the purge decision is informed -- a business with
+    runs shows `purge_eligible_at: null`, meaning the nightly purge will never
+    take it and only a deliberate purge attempt (which will be refused) or a
+    restore can change its state.
+    """
+    trashed = await db_client.list_deleted_organizations()
+    counts = await db_client.get_organization_resource_counts(
+        [org.id for org in trashed]
+    )
+    return [_trashed_summary(org, counts.get(org.id)) for org in trashed]
+
+
+@router.post("/trash/{organization_id}/restore", status_code=204)
+async def restore_trashed_client(
+    organization_id: int,
+    user: UserModel = Depends(require_agency_owner),
+):
+    """Bring a trashed business back, exactly as it was.
+
+    Everything survived the trash -- agents, runs, recordings, memberships --
+    so restore is a single column write. Members who were standing in the
+    business when it was trashed must reselect it from the switcher; that is
+    the only visible difference.
+    """
+    organization = await _require_trashed_organization(organization_id)
+    restored = await db_client.restore_organization(organization.id)
+    if restored is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return None
+
+
+@router.post("/trash/{organization_id}/purge", status_code=204)
+async def purge_trashed_client(
+    organization_id: int,
+    user: UserModel = Depends(require_agency_owner),
+):
+    """Destroy a trashed business permanently. Owner-only, impact-guarded.
+
+    This is the one irreversible act in the agency surface, so the guard that
+    used to sit on plain delete lives here: a business with work history is
+    refused with the counts and stays restorable. The nightly purge job runs
+    the same guard for expired businesses and leaves guarded ones alone.
+    """
+    organization = await _require_trashed_organization(organization_id)
+    stats = await _stats_for(organization.id)
+    blocking = [k for k in _DELETE_SAFE_THRESHOLDS if stats[k] > 0]
+    if blocking:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "This business has work history and cannot be destroyed. "
+                    "It stays in the trash and remains restorable -- restore it "
+                    "instead."
+                ),
+                **stats,
+            },
+        )
+
+    await db_client.clear_selected_organization_references(organization.id)
+    await db_client.clear_organization_users(organization.id)
+    await db_client.delete_organization(organization.id)
+    return None
 
 
 # =============================================================================

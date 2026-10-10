@@ -10,14 +10,10 @@ import {
   createDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPost,
   deleteAgencyClientApiV1AgencyClientsOrganizationIdDelete,
   getAgencyClientApiV1AgencyClientsOrganizationIdGet,
-  getAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGet,
   renameAgencyClientApiV1AgencyClientsOrganizationIdPatch,
   unarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePost,
 } from "@/client/sdk.gen";
-import type {
-  AgencyClientDeleteImpact,
-  AgencyClientSummary,
-} from "@/client/types.gen";
+import type { AgencyClientSummary } from "@/client/types.gen";
 import { CreativePageGate } from "@/components/creative/CreativePageGate";
 import {
   AlertDialog,
@@ -74,11 +70,8 @@ function ClientDetailContent() {
   const [isRenaming, setIsRenaming] = useState(false);
   const [isTogglingArchive, setIsTogglingArchive] = useState(false);
   const [isSwitchingIn, setIsSwitchingIn] = useState(false);
-  const [deleteImpact, setDeleteImpact] = useState<AgencyClientDeleteImpact | null>(
-    null
-  );
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isFetchingImpact, setIsFetchingImpact] = useState(false);
+  const [isRequestingDeletion, setIsRequestingDeletion] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const loadClient = useCallback(
@@ -197,7 +190,7 @@ function ClientDetailContent() {
     // client comes from the backend once the request exists.
     if (!owner) {
       try {
-        setIsFetchingImpact(true);
+        setIsRequestingDeletion(true);
         const response =
           await createDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPost(
             { path: { organization_id: client.id }, body: {} }
@@ -215,28 +208,15 @@ function ClientDetailContent() {
           err instanceof Error ? err.message : "Could not send the request"
         );
       } finally {
-        setIsFetchingImpact(false);
+        setIsRequestingDeletion(false);
       }
       return;
     }
 
-    try {
-      setIsFetchingImpact(true);
-      const response =
-        await getAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGet(
-          { path: { organization_id: client.id } }
-        );
-      if (response.error || !response.data) {
-        throw new Error(detailFromError(response.error, "Could not check delete safety"));
-      }
-      setDeleteImpact(response.data);
-      setIsDeleteDialogOpen(true);
-    } catch (err) {
-      logger.error("Failed to fetch delete impact", err);
-      toast.error(err instanceof Error ? err.message : "Could not check delete safety");
-    } finally {
-      setIsFetchingImpact(false);
-    }
+    // Owner: open the trash confirm. No safety pre-check -- trashing is
+    // reversible, so business history is not a reason to refuse; the
+    // irreversible purge (on the Team page) carries the guard.
+    setIsDeleteDialogOpen(true);
   };
 
   const handleConfirmDelete = async () => {
@@ -250,12 +230,12 @@ function ClientDetailContent() {
       if (response.error) {
         throw new Error(detailFromError(response.error, "Delete failed"));
       }
-      toast.success(`Deleted "${client.label}"`);
+      toast.success(`"${client.label}" moved to the trash`);
       setIsDeleteDialogOpen(false);
       router.push("/creative/clients");
     } catch (err) {
-      logger.error("Failed to delete client", err);
-      toast.error(err instanceof Error ? err.message : "Delete failed");
+      logger.error("Failed to trash client", err);
+      toast.error(err instanceof Error ? err.message : "Could not trash the client");
       setIsDeleteDialogOpen(false);
     } finally {
       setIsDeleting(false);
@@ -293,15 +273,6 @@ function ClientDetailContent() {
       </div>
     );
   }
-
-  const impactStats = deleteImpact
-    ? [
-        { label: "Voice agents", value: deleteImpact.workflow_count },
-        { label: "Agent runs", value: deleteImpact.run_count },
-        { label: "Phone numbers", value: deleteImpact.phone_number_count },
-        { label: "Members", value: deleteImpact.member_count },
-      ]
-    : [];
 
   return (
     <div className="container mx-auto space-y-8 px-4 py-8">
@@ -413,14 +384,14 @@ function ClientDetailContent() {
           <CardTitle className="text-destructive">Danger zone</CardTitle>
           <CardDescription>
             {owner
-              ? "Deleting removes the business outright. Anything with work history cannot be deleted -- archive it instead."
+              ? "Moves the business to the trash: hidden everywhere, restorable for 10 days from the Team page. Businesses with call history are never auto-destroyed."
               : "Send the agency owner a request to delete this business. Nothing happens until they approve it."}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button variant="destructive" onClick={handleDeleteClick} disabled={isFetchingImpact}>
-            {isFetchingImpact
-              ? "Working..."
+          <Button variant="destructive" onClick={handleDeleteClick} disabled={isRequestingDeletion}>
+            {isRequestingDeletion
+              ? "Sending..."
               : owner
                 ? "Delete client"
                 : client.deletion_pending
@@ -437,70 +408,30 @@ function ClientDetailContent() {
         }}
       >
         <AlertDialogContent>
-          {deleteImpact?.deletable ? (
-            <>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  Delete &ldquo;{client.label}&rdquo;?
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  This removes the business and its API keys, model
-                  configurations, and telephony settings for every member. This
-                  cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleConfirmDelete();
-                  }}
-                  disabled={isDeleting}
-                  className="bg-destructive text-white hover:bg-destructive/90"
-                >
-                  {isDeleting ? "Deleting..." : "Delete client"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </>
-          ) : (
-            <>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  &ldquo;{client.label}&rdquo; cannot be deleted
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  {deleteImpact?.blocking_reason ??
-                    "This business has work history."}
-                  {impactStats.length > 0 && (
-                    <span className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                      {impactStats.map((stat) => (
-                        <span key={stat.label} className="contents">
-                          <span className="text-muted-foreground">{stat.label}</span>
-                          <span className="text-right font-medium tabular-nums">
-                            {stat.value}
-                          </span>
-                        </span>
-                      ))}
-                    </span>
-                  )}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Close</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setIsDeleteDialogOpen(false);
-                    handleToggleArchive();
-                  }}
-                  disabled={isTogglingArchive}
-                >
-                  {client.archived ? "Restore instead" : "Archive it instead"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </>
-          )}
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Move &ldquo;{client.label}&rdquo; to the trash?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              It disappears from every list and the switcher immediately, but
+              nothing is destroyed: it stays restorable for 10 days from the
+              Team page, and businesses with call history are kept restorable
+              indefinitely.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleConfirmDelete();
+              }}
+              disabled={isDeleting}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {isDeleting ? "Moving..." : "Move to trash"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>

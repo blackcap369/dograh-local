@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from api.enums import Environment
@@ -74,6 +75,11 @@ ENABLE_SIGNUP = os.getenv("ENABLE_SIGNUP", "true").lower() == "true"
 # signing up or logging in with one of these emails is promoted to the owner
 # role (users.agency_role = 'owner') at auth time; promotion is one-way, so
 # removing an email here later does not silently demote an existing owner.
+# How long a trashed (soft-deleted) business stays restorable before the
+# nightly purge may hard-delete it -- and only if it passes the impact guard.
+# Businesses with work history are never purged by the timer at all.
+TRASH_RETENTION_DAYS = int(os.getenv("TRASH_RETENTION_DAYS", "10"))
+TRASH_RETENTION = timedelta(days=TRASH_RETENTION_DAYS)
 OWNER_EMAILS = {
     e.strip().lower()
     for e in os.getenv("OWNER_EMAILS", "").split(",")

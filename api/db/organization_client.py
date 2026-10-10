@@ -20,14 +20,98 @@ from api.db.models import (
 
 
 class OrganizationClient(BaseDBClient):
-    async def get_organization_by_id(
-        self, organization_id: int
-    ) -> Optional[OrganizationModel]:
-        """Get an organization by its ID."""
+    async def list_deleted_organizations(self) -> list[OrganizationModel]:
+        """Every trashed business, newest deletion first -- the owner's trash."""
         async with self.async_session() as session:
             result = await session.execute(
-                select(OrganizationModel).where(OrganizationModel.id == organization_id)
+                select(OrganizationModel)
+                .where(OrganizationModel.deleted_at.is_not(None))
+                .order_by(OrganizationModel.deleted_at.desc())
             )
+            return list(result.scalars().all())
+
+    async def list_expired_trashed_organizations(self, cutoff) -> list[OrganizationModel]:
+        """Trashed businesses past the retention window, oldest deletion first.
+
+        The nightly purge's input. Businesses whose impact guard refuses a
+        permanent delete are simply never returned to the purge caller -- they
+        stay trashed forever rather than being destroyed on a timer.
+        """
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(OrganizationModel)
+                .where(
+                    OrganizationModel.deleted_at.is_not(None),
+                    OrganizationModel.deleted_at < cutoff,
+                )
+                .order_by(OrganizationModel.deleted_at)
+            )
+            return list(result.scalars().all())
+
+    async def mark_organization_deleted(
+        self, organization_id: int
+    ) -> Optional[OrganizationModel]:
+        """Soft delete: stamp deleted_at, touching nothing else.
+
+        Returns the updated row, or None if the id does not exist (or was
+        already trashed -- `get_organization_by_id` with its default filter
+        will have 404'd the route before this is reached).
+        """
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(OrganizationModel).where(
+                    OrganizationModel.id == organization_id,
+                    OrganizationModel.deleted_at.is_(None),
+                )
+            )
+            organization = result.scalars().first()
+            if organization is None:
+                return None
+
+            organization.deleted_at = datetime.now(timezone.utc)
+            await session.commit()
+            await session.refresh(organization)
+            return organization
+
+    async def restore_organization(
+        self, organization_id: int
+    ) -> Optional[OrganizationModel]:
+        """Undo a soft delete. Returns None if the id does not exist; the route
+        refuses to restore a row that was never trashed."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(OrganizationModel).where(
+                    OrganizationModel.id == organization_id,
+                    OrganizationModel.deleted_at.is_not(None),
+                )
+            )
+            organization = result.scalars().first()
+            if organization is None:
+                return None
+
+            organization.deleted_at = None
+            await session.commit()
+            await session.refresh(organization)
+            return organization
+
+    async def get_organization_by_id(
+        self, organization_id: int, include_deleted: bool = False
+    ) -> Optional[OrganizationModel]:
+        """Get an organization by its ID.
+
+        Trashed (soft-deleted) organizations are excluded unless
+        `include_deleted=True`. The default is the fail-closed direction: the
+        dozens of call sites that look an org up by id get "gone" for a
+        trashed business, which is what every one of them wants -- only the
+        trash surface (restore, purge) opts in.
+        """
+        async with self.async_session() as session:
+            query = select(OrganizationModel).where(
+                OrganizationModel.id == organization_id
+            )
+            if not include_deleted:
+                query = query.where(OrganizationModel.deleted_at.is_(None))
+            result = await session.execute(query)
             return result.scalars().first()
 
     # =========================================================================
@@ -55,7 +139,8 @@ class OrganizationClient(BaseDBClient):
         The staff Clients page's only read. Deliberately a join against the
         assignment table -- not a filter applied after listing everything --
         so an unassigned business's name never leaves the database for a staff
-        caller.
+        caller. Trashed businesses are always excluded: a deleted client is
+        nobody's work surface.
         """
         async with self.async_session() as session:
             result = await session.execute(
@@ -65,7 +150,10 @@ class OrganizationClient(BaseDBClient):
                     StaffClientAssignmentModel.organization_id
                     == OrganizationModel.id,
                 )
-                .where(StaffClientAssignmentModel.user_id == user_id)
+                .where(
+                    StaffClientAssignmentModel.user_id == user_id,
+                    OrganizationModel.deleted_at.is_(None),
+                )
                 .order_by(OrganizationModel.id)
             )
             return list(result.scalars().all())
@@ -390,9 +478,14 @@ class OrganizationClient(BaseDBClient):
         client-side would still ship an archived business's name over the wire and
         would depend on every caller remembering -- which is precisely how a
         retired client reappears in the switcher six months later.
+
+        Trashed businesses are always excluded: the trash surface reads them
+        through its own query, so no caller here has a reason to see them.
         """
         async with self.async_session() as session:
-            query = select(OrganizationModel)
+            query = select(OrganizationModel).where(
+                OrganizationModel.deleted_at.is_(None)
+            )
             if not include_archived:
                 query = query.where(OrganizationModel.archived.is_(False))
             result = await session.execute(query.order_by(OrganizationModel.id))

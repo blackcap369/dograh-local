@@ -11,15 +11,19 @@ import {
   listAgencyClientsApiV1AgencyClientsGet,
   listDeletionRequestsApiV1AgencyDeletionRequestsGet,
   listStaffApiV1AgencyStaffGet,
+  listTrashedClientsApiV1AgencyTrashGet,
+  purgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePost,
   rejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPost,
   replaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPut,
   resetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPost,
+  restoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePost,
   setStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatch,
 } from "@/client/sdk.gen";
 import type {
   AgencyClientSummary,
   DeletionRequestSummary,
   StaffAccountSummary,
+  TrashedClientSummary,
 } from "@/client/types.gen";
 import { CreativePageGate } from "@/components/creative/CreativePageGate";
 import {
@@ -83,7 +87,10 @@ function TeamContent() {
   const [staff, setStaff] = useState<StaffAccountSummary[]>([]);
   const [requests, setRequests] = useState<DeletionRequestSummary[]>([]);
   const [clients, setClients] = useState<AgencyClientSummary[]>([]);
+  const [trash, setTrash] = useState<TrashedClientSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [purgeTarget, setPurgeTarget] = useState<TrashedClientSummary | null>(null);
+  const [isPurging, setIsPurging] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
   const [newEmail, setNewEmail] = useState("");
@@ -105,12 +112,19 @@ function TeamContent() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const [staffResponse, requestResponse, clientsResponse] = await Promise.all([
-        listStaffApiV1AgencyStaffGet(),
-        listDeletionRequestsApiV1AgencyDeletionRequestsGet(),
-        listAgencyClientsApiV1AgencyClientsGet(),
-      ]);
-      for (const response of [staffResponse, requestResponse, clientsResponse]) {
+      const [staffResponse, requestResponse, clientsResponse, trashResponse] =
+        await Promise.all([
+          listStaffApiV1AgencyStaffGet(),
+          listDeletionRequestsApiV1AgencyDeletionRequestsGet(),
+          listAgencyClientsApiV1AgencyClientsGet(),
+          listTrashedClientsApiV1AgencyTrashGet(),
+        ]);
+      for (const response of [
+        staffResponse,
+        requestResponse,
+        clientsResponse,
+        trashResponse,
+      ]) {
         if (response.error) {
           throw new Error(detailFromError(response.error, "Failed to load team data"));
         }
@@ -118,6 +132,7 @@ function TeamContent() {
       setStaff(staffResponse.data ?? []);
       setRequests(requestResponse.data ?? []);
       setClients(clientsResponse.data ?? []);
+      setTrash(trashResponse.data ?? []);
     } catch (err) {
       logger.error("Failed to load team page", err);
       toast.error(err instanceof Error ? err.message : "Failed to load team data");
@@ -296,6 +311,46 @@ function TeamContent() {
     }
   };
 
+  const handleRestore = async (item: TrashedClientSummary) => {
+    try {
+      const response = await restoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePost(
+        { path: { organization_id: item.id } }
+      );
+      if (response.error) {
+        throw new Error(detailFromError(response.error, "Could not restore the business"));
+      }
+      toast.success(`Restored "${item.label}"`);
+      await fetchData();
+    } catch (err) {
+      logger.error("Failed to restore", err);
+      toast.error(err instanceof Error ? err.message : "Could not restore the business");
+    }
+  };
+
+  const handlePurge = async () => {
+    if (!purgeTarget) return;
+    try {
+      setIsPurging(true);
+      const response = await purgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePost(
+        { path: { organization_id: purgeTarget.id } }
+      );
+      if (response.error) {
+        throw new Error(
+          detailFromError(response.error, "Could not destroy the business")
+        );
+      }
+      toast.success(`Permanently deleted "${purgeTarget.label}"`);
+      setPurgeTarget(null);
+      await fetchData();
+    } catch (err) {
+      logger.error("Failed to purge", err);
+      toast.error(err instanceof Error ? err.message : "Could not destroy the business");
+      setPurgeTarget(null);
+    } finally {
+      setIsPurging(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="container mx-auto space-y-6 px-4 py-8">
@@ -360,6 +415,63 @@ function TeamContent() {
                       onClick={() => handleDeletionDecision(request, "approve")}
                     >
                       Approve &amp; delete
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Trash</CardTitle>
+          <CardDescription>
+            Deleted businesses stay restorable for 10 days. Those with call
+            history are never removed automatically and stay restorable until
+            you destroy them yourself.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {trash.length === 0 ? (
+            <p className="py-4 text-sm text-muted-foreground">The trash is empty.</p>
+          ) : (
+            <ul className="divide-y divide-border/60">
+              {trash.map((item) => (
+                <li
+                  key={item.id}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{item.label}</p>
+                    <p className="text-sm text-muted-foreground">
+                      Deleted{" "}
+                      {item.deleted_at
+                        ? new Date(item.deleted_at).toLocaleString()
+                        : "recently"}
+                      {item.purge_eligible_at
+                        ? ` — auto-destroys after ${new Date(
+                            item.purge_eligible_at
+                          ).toLocaleDateString()}`
+                        : " — kept: has work history"}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRestore(item)}
+                    >
+                      Restore
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={item.purge_eligible_at === null}
+                      onClick={() => setPurgeTarget(item)}
+                    >
+                      Delete forever
                     </Button>
                   </div>
                 </li>
@@ -592,6 +704,38 @@ function TeamContent() {
               className="bg-destructive text-white hover:bg-destructive/90"
             >
               {isDeleting ? "Deleting..." : "Delete account"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Purge (destroy forever) confirmation */}
+      <AlertDialog
+        open={!!purgeTarget}
+        onOpenChange={(open) => !open && setPurgeTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Permanently destroy &ldquo;{purgeTarget?.label}&rdquo;?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This cannot be undone. Every agent, call recording, and setting
+              for this business is destroyed immediately. If you might still
+              want it, restore it instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPurging}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handlePurge();
+              }}
+              disabled={isPurging}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {isPurging ? "Destroying..." : "Destroy forever"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

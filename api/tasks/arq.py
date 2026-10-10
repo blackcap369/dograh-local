@@ -67,6 +67,7 @@ from api.tasks.text_chat_inactivity import (
     complete_inactive_text_chat_session,
     sweep_inactive_text_chat_sessions,
 )
+from api.tasks.trash_purge import purge_expired_trashed_organizations
 from api.tasks.webhook_delivery import deliver_webhook, sweep_webhook_deliveries
 from api.tasks.workflow_completion import process_workflow_completion
 
@@ -80,6 +81,7 @@ class WorkerSettings:
         process_knowledge_base_document,
         deliver_webhook,
         complete_inactive_text_chat_session,
+        purge_expired_trashed_organizations,
     ]
     cron_jobs = [
         # Safety net for webhook deliveries whose ARQ job was lost (worker
@@ -96,6 +98,15 @@ class WorkerSettings:
             sweep_inactive_text_chat_sessions,
             minute=set(range(0, 60, TEXT_CHAT_INACTIVITY_SWEEP_INTERVAL_MINUTES)),
             second=30,
+            run_at_startup=True,
+        ),
+        # The recovery trash's clock: hard-delete expired trashed businesses
+        # that pass the impact guard. Nightly, just after midnight -- nothing
+        # here is urgent, and a business with work history is never taken.
+        cron(
+            purge_expired_trashed_organizations,
+            minute=17,
+            hour=0,
             run_at_startup=True,
         ),
     ]

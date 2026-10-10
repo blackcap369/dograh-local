@@ -219,7 +219,6 @@ class OrganizationModel(Base):
     # configurations, telephony configs, phone numbers, and call records CASCADE
     # and are destroyed silently, while workflows, folders, campaigns, and the
     # membership table carry no ondelete at all and either raise or are orphaned.
-    #
     # server_default is required, unlike the `name` backfill which deliberately
     # used one instead. `name` was nullable so omitting it was meaningful; here
     # every row must read as false, and a column added NOT NULL without a default
@@ -231,6 +230,13 @@ class OrganizationModel(Base):
         default=False,
         server_default=text("false"),
     )
+    # Recovery trash (soft delete). Set when the owner deletes (or approves a
+    # staff deletion request); every default lookup filters it out, so a
+    # trashed business is invisible everywhere while remaining fully
+    # restorable for the retention window. The nightly purge hard-deletes
+    # expired rows that pass the impact guard and simply leaves rows with
+    # history trashed forever -- nothing is destroyed on a timer.
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     # Deprecated: MPS owns quota and credit ledger state.

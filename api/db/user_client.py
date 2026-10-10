@@ -366,6 +366,9 @@ class UserClient(BaseDBClient):
                 )
                 .where(organization_users_association.c.user_id == user_id)
             )
+            # Trashed businesses never appear: the switcher would offer a
+            # place to stand that is on its way out.
+            query = query.where(OrganizationModel.deleted_at.is_(None))
             if not include_archived:
                 query = query.where(OrganizationModel.archived.is_(False))
             result = await session.execute(query.order_by(OrganizationModel.id))

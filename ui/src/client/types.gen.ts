@@ -7146,6 +7146,54 @@ export type TransferCallToolDefinition = {
 };
 
 /**
+ * TrashedClientSummary
+ *
+ * One trashed business, as the owner's trash renders it.
+ */
+export type TrashedClientSummary = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Provider Id
+     */
+    provider_id: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Archived
+     */
+    archived?: boolean;
+    /**
+     * Deleted At
+     */
+    deleted_at?: string | null;
+    /**
+     * Purge Eligible At
+     */
+    purge_eligible_at?: string | null;
+    /**
+     * Workflow Count
+     */
+    workflow_count?: number;
+    /**
+     * Run Count
+     */
+    run_count?: number;
+    /**
+     * Phone Number Count
+     */
+    phone_number_count?: number;
+    /**
+     * Member Count
+     */
+    member_count?: number;
+};
+
+/**
  * TriggerCallRequest
  *
  * Request model for triggering a call via API
@@ -8694,42 +8742,42 @@ export type InitiateCallApiV1TelephonyInitiateCallPostResponses = {
     200: unknown;
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunGetData = {
+export type HandleInboundRunApiV1TelephonyInboundRunPostData = {
     body?: never;
     path?: never;
     query?: never;
     url: '/api/v1/telephony/inbound/run';
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunGetErrors = {
+export type HandleInboundRunApiV1TelephonyInboundRunPostErrors = {
     /**
      * Not found
      */
     404: unknown;
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunGetResponses = {
+export type HandleInboundRunApiV1TelephonyInboundRunPostResponses = {
     /**
      * Successful Response
      */
     200: unknown;
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunGet2Data = {
+export type HandleInboundRunApiV1TelephonyInboundRunPost2Data = {
     body?: never;
     path?: never;
     query?: never;
     url: '/api/v1/telephony/inbound/run';
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunGet2Errors = {
+export type HandleInboundRunApiV1TelephonyInboundRunPost2Errors = {
     /**
      * Not found
      */
     404: unknown;
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunGet2Responses = {
+export type HandleInboundRunApiV1TelephonyInboundRunPost2Responses = {
     /**
      * Successful Response
      */
@@ -16647,6 +16695,135 @@ export type RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostR
 };
 
 export type RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostResponse = RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostResponses[keyof RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostResponses];
+
+export type ListTrashedClientsApiV1AgencyTrashGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/trash';
+};
+
+export type ListTrashedClientsApiV1AgencyTrashGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListTrashedClientsApiV1AgencyTrashGetError = ListTrashedClientsApiV1AgencyTrashGetErrors[keyof ListTrashedClientsApiV1AgencyTrashGetErrors];
+
+export type ListTrashedClientsApiV1AgencyTrashGetResponses = {
+    /**
+     * Response List Trashed Clients Api V1 Agency Trash Get
+     *
+     * Successful Response
+     */
+    200: Array<TrashedClientSummary>;
+};
+
+export type ListTrashedClientsApiV1AgencyTrashGetResponse = ListTrashedClientsApiV1AgencyTrashGetResponses[keyof ListTrashedClientsApiV1AgencyTrashGetResponses];
+
+export type RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/trash/{organization_id}/restore';
+};
+
+export type RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostError = RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostErrors[keyof RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostErrors];
+
+export type RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostResponse = RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostResponses[keyof RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostResponses];
+
+export type PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/trash/{organization_id}/purge';
+};
+
+export type PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostError = PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostErrors[keyof PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostErrors];
+
+export type PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostResponse = PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostResponses[keyof PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostResponses];
 
 export type ListStaffApiV1AgencyStaffGetData = {
     body?: never;
