@@ -5263,6 +5263,62 @@ export type PropertySpec = {
 export type PropertyType = 'string' | 'number' | 'boolean' | 'options' | 'multi_options' | 'fixed_collection' | 'json' | 'tool_refs' | 'document_refs' | 'recording_ref' | 'credential_ref' | 'mention_textarea' | 'url';
 
 /**
+ * ProviderKeyCreateRequest
+ *
+ * Body for saving an API key into the organization's vault.
+ */
+export type ProviderKeyCreateRequest = {
+    /**
+     * Service
+     */
+    service: string;
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Alias
+     */
+    alias: string;
+    /**
+     * Api Key
+     */
+    api_key: string;
+};
+
+/**
+ * ProviderKeyResponse
+ *
+ * A saved key, masked. The raw key never leaves the server.
+ */
+export type ProviderKeyResponse = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Service
+     */
+    service: string;
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Alias
+     */
+    alias: string;
+    /**
+     * Masked Key
+     */
+    masked_key: string;
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+};
+
+/**
  * ProviderSetupChecklist
  *
  * A configuration's setup progress, as computed by its provider.
@@ -12613,6 +12669,135 @@ export type GetModelConfigurationPricingApiV1OrganizationsModelConfigurationsV2P
 };
 
 export type GetModelConfigurationPricingApiV1OrganizationsModelConfigurationsV2PricingGetResponse = GetModelConfigurationPricingApiV1OrganizationsModelConfigurationsV2PricingGetResponses[keyof GetModelConfigurationPricingApiV1OrganizationsModelConfigurationsV2PricingGetResponses];
+
+export type ListProviderKeysApiV1OrganizationsProviderKeysGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Service
+         */
+        service?: string | null;
+    };
+    url: '/api/v1/organizations/provider-keys';
+};
+
+export type ListProviderKeysApiV1OrganizationsProviderKeysGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListProviderKeysApiV1OrganizationsProviderKeysGetError = ListProviderKeysApiV1OrganizationsProviderKeysGetErrors[keyof ListProviderKeysApiV1OrganizationsProviderKeysGetErrors];
+
+export type ListProviderKeysApiV1OrganizationsProviderKeysGetResponses = {
+    /**
+     * Response List Provider Keys Api V1 Organizations Provider Keys Get
+     *
+     * Successful Response
+     */
+    200: Array<ProviderKeyResponse>;
+};
+
+export type ListProviderKeysApiV1OrganizationsProviderKeysGetResponse = ListProviderKeysApiV1OrganizationsProviderKeysGetResponses[keyof ListProviderKeysApiV1OrganizationsProviderKeysGetResponses];
+
+export type CreateProviderKeyApiV1OrganizationsProviderKeysPostData = {
+    body: ProviderKeyCreateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/organizations/provider-keys';
+};
+
+export type CreateProviderKeyApiV1OrganizationsProviderKeysPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateProviderKeyApiV1OrganizationsProviderKeysPostError = CreateProviderKeyApiV1OrganizationsProviderKeysPostErrors[keyof CreateProviderKeyApiV1OrganizationsProviderKeysPostErrors];
+
+export type CreateProviderKeyApiV1OrganizationsProviderKeysPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProviderKeyResponse;
+};
+
+export type CreateProviderKeyApiV1OrganizationsProviderKeysPostResponse = CreateProviderKeyApiV1OrganizationsProviderKeysPostResponses[keyof CreateProviderKeyApiV1OrganizationsProviderKeysPostResponses];
+
+export type DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Key Id
+         */
+        key_id: number;
+    };
+    query?: never;
+    url: '/api/v1/organizations/provider-keys/{key_id}';
+};
+
+export type DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteError = DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteErrors[keyof DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteErrors];
+
+export type DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteResponse = DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteResponses[keyof DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteResponses];
 
 export type PreviewModelConfigurationV2MigrationApiV1OrganizationsModelConfigurationsV2MigrationPreviewGetData = {
     body?: never;
