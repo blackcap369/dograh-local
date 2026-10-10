@@ -62,6 +62,13 @@ require owner confirmation; deleted businesses are recoverable for ~10 days.
 - Staff signup flow: owner creates the staff account from the access page
   (email + one-time password) OR open signup lands as unassigned staff who see
   an empty Clients page until assigned. Default: owner-created accounts.
+- **Owner refinement (2026-10-11, live testing) — assignments grant
+  Organization-mode access too.** `get_organizations_for_user` (the switcher
+  read + the switch check) unions memberships with assignments, so an
+  assigned staff member switches into the business and edits its agents --
+  what Creative shows, Organization offers, and vice versa (a staff-created
+  organization appears in Creative via the membership it grants).
+  Committed a491d66 with client-layer + route tests.
 
 ### V2.1c — Owner access-management settings ("advanced settings")
 
