@@ -159,6 +159,30 @@ What remains:
    `organization_context` / scoping helpers (several of those tests are in the
    known-environmental-failure set and must not silently stay red).
 
+## V2.5 — Saved provider keys vault + key dropdown (agreed 2026-10-11)
+
+The gap: dograh's Models page takes one API key per provider, and the
+Override flow forces manual key re-entry every time. The PRD's
+"multi-provider keys with alias save" was never built.
+
+Scope:
+
+1. **Vault is keys-only.** Model family, model, and every other
+   configuration control stay exactly as they are. The API-key input gains a
+   "use saved key" dropdown (filtered to the selected provider) beside the
+   existing manual entry, which stays for one-off keys. Empty vault = page
+   behaves exactly as today. Nothing hidden, nothing removed.
+2. Backend: `provider_key_vault` table (organization_id, provider_type,
+   provider_name, alias, api_key encrypted with the same mechanism the
+   existing credentials store uses, is_active). Org-scoped CRUD routes;
+   list responses mask keys -- raw keys are never returned after save.
+3. Frontend: the key dropdown on the Models page and the Override dialog
+   reads the vault; a small manage section saves/deletes aliases.
+4. Tests: vault CRUD + isolation (another org's keys invisible), masked
+   list responses, override flow accepting a vault key id.
+
+Order: after V2.2 (white-label) or standalone on request.
+
 ## V2.4 — Production hardening checklist (before first real client)
 
 - `ENABLE_SIGNUP=false` until V2.1 (see boundary note) -- or immediately if
