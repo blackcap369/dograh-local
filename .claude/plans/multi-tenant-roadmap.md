@@ -1,5 +1,8 @@
 # Multi-Tenant Agency Platform — Delivery Roadmap
 
+> Ideas and half-formed upgrades live in `IDEAS.md` (repo root). They land
+> here only when we decide the timing is right.
+
 Branch: `feat/multi-tenant-org-switching`
 Status: Steps 0-4 complete. Verified end-to-end in the running app (2026-10-07).
 V2 backlog below is agreed and not started.
