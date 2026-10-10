@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { IS_WHITELABEL } from "@/lib/branding";
 import { VoiceSelectorModal } from "@/components/VoiceSelectorModal";
 import { LANGUAGE_DISPLAY_NAMES } from "@/constants/languages";
 import { formatRoundingPolicy } from "@/lib/billingDisplay";
@@ -460,7 +461,9 @@ export function AIModelConfigurationV2Editor({
             <Tabs value={mode} onValueChange={(value) => setMode(value as ModelMode)} className="space-y-6">
                 <TabsList className="grid w-full grid-cols-3">
                     <TabsTrigger value="realtime">Speech to Speech</TabsTrigger>
-                    <TabsTrigger value="dograh">Dograh</TabsTrigger>
+                    {/* The Dograh tab is the upstream-hosted (MPS) offering;
+                        a whitelabel agency runs BYOK, so it is not offered. */}
+                    {!IS_WHITELABEL && <TabsTrigger value="dograh">Dograh</TabsTrigger>}
                     <TabsTrigger value="byok">BYOK</TabsTrigger>
                 </TabsList>
 
@@ -481,6 +484,7 @@ export function AIModelConfigurationV2Editor({
                     <ThirdPartyProviderNotice />
                 </TabsContent>
 
+                {!IS_WHITELABEL && (
                 <TabsContent value="dograh" className="mt-0">
                     <p className="mb-4 text-sm text-muted-foreground">
                         Dograh provides a managed transcriber, LLM, and voice pipeline. Select a voice and language while Dograh manages the underlying model providers.{" "}
@@ -571,6 +575,7 @@ export function AIModelConfigurationV2Editor({
                         </CardContent>
                     </Card>
                 </TabsContent>
+                )}
 
                 <TabsContent value="byok" className="mt-0">
                     <p className="mb-4 text-sm text-muted-foreground">

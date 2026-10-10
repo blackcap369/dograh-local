@@ -9,6 +9,8 @@
 
 import type { ReactNode } from "react";
 
+import { IS_WHITELABEL } from "@/lib/branding";
+
 import { BrandLogo } from "@/components/BrandLogo";
 
 const HIGHLIGHTS = [
@@ -71,16 +73,18 @@ export function AuthShell({
 
         {/* Enterprise CTA block (Bland-style) — bottom margin lifts it off the
             viewport edge while justify-between keeps the column layout */}
-        <div className="relative mb-12 max-w-md space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-5 xl:mb-16">
-          <h2 className="text-sm font-semibold text-zinc-100">
-            Need on-prem, data residency &amp; a data perimeter?
-          </h2>
-          <p className="text-sm text-zinc-400">
-            We deploy Dograh inside your environment for regulated and
-            high-scale teams.
-          </p>
-          {enterpriseSlot}
-        </div>
+        {!IS_WHITELABEL && (
+          <div className="relative mb-12 max-w-md space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-5 xl:mb-16">
+            <h2 className="text-sm font-semibold text-zinc-100">
+              Need on-prem, data residency &amp; a data perimeter?
+            </h2>
+            <p className="text-sm text-zinc-400">
+              We deploy Dograh inside your environment for regulated and
+              high-scale teams.
+            </p>
+            {enterpriseSlot}
+          </div>
+        )}
       </aside>
     </div>
   );
