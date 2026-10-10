@@ -133,7 +133,17 @@ Still Dograh-branded with the flag ON -- audit and gate each:
 - Logo identity: replace `/public/dograh-*.png` + favicon with the agency's
   (asset swap, no code), and set `NEXT_PUBLIC_APP_NAME`.
 - Email templates / password-reset mail if local auth sends any.
-- Sweep for hardcoded "dograh" strings in user-visible UI (grep + eyeball).
+- Sweep for hardcoded "dograh" strings in user-visible UI (grep + eyeball)
+  -- DONE 2026-10-11 (V2.2 delivered: auth panel, onboarding, Models Dograh
+  tab, api-keys/billing pointers, footer, usage label all gated).
+- **Provider allow-listing (addendum, agreed 2026-10-11):** the model
+  configuration surface renders every provider the upstream defaults ship
+  (many the agency will never use). Do NOT delete provider code -- providers
+  are config-driven schemas, nothing breaks and nothing extra is downloaded.
+  Instead add an agency-controlled allow-list (env or settings) that filters
+  the provider dropdowns across the Models page, vault, and configuration
+  forms; unlisted providers simply do not appear. The vault's provider field
+  already reads the same defaults, so it inherits the filter automatically.
 
 **Done when:** a fresh signup, a hard reload on every page, and the auth flow
 show zero upstream-brand references with the flag on.
