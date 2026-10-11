@@ -97,6 +97,7 @@ def _patched_db() -> AsyncMock:
             GLOBEX.id: {"runs_24h": 0, "failed_24h": 0, "last_failure": None},
         }
     )
+    mock_db.get_balances_for_orgs = AsyncMock(return_value={ACME.id: 60})
     mock_db.list_active_failure_alerts = AsyncMock(
         return_value=[
             {
@@ -221,6 +222,7 @@ class TestHealthEndpoint:
         assert acme["failed_24h"] == 3
         assert acme["last_failure"]["agent_name"] == "Acme support agent"
         assert body["alerts"][0]["failure_count"] == 3
+        assert body["credit_minutes"][str(ACME.id)] == 60
 
     @pytest.mark.asyncio
     async def test_staff_sees_only_assigned_businesses(self):

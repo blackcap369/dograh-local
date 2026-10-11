@@ -177,6 +177,18 @@ function ClientsContent() {
                     {client.member_count}
                   </span>
                 </div>
+                <div className="col-span-2 flex justify-between gap-2 border-t border-border/60 pt-2">
+                  <span className="text-muted-foreground">Credits</span>
+                  <span
+                    className={
+                      (client.credit_minutes ?? 0) <= 30
+                        ? "font-medium text-destructive tabular-nums"
+                        : "font-medium tabular-nums"
+                    }
+                  >
+                    {client.credit_minutes ?? 0} min
+                  </span>
+                </div>
               </CardContent>
               <CardFooter className="border-t border-border/60 pt-4">
                 <Button asChild variant="outline" size="sm">

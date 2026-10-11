@@ -176,6 +176,51 @@ class ProviderKeyVaultModel(Base):
     )
 
 
+class CreditBalanceModel(Base):
+    """One organization's credit balance. 1 credit = 1 minute of successful
+    run time; plans and top-ups are grants into this balance, failed runs
+    never deduct."""
+
+    __tablename__ = "credit_balances"
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    balance_minutes = Column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+
+class CreditTransactionModel(Base):
+    """One credit movement (grant, top-up, or per-run deduction) with the
+    balance it produced, so the full history is reconstructible."""
+
+    __tablename__ = "credit_transactions"
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    delta_minutes = Column(Integer, nullable=False)
+    balance_after = Column(Integer, nullable=False)
+    # grant | top_up | run_deduction
+    reason = Column(String(64), nullable=False)
+    run_id = Column(Integer, nullable=True)
+    created_by = Column(Integer, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+
 class RunFailureAlertModel(Base):
     """An open failed-run alert for one agent (workflow) in one business.
 

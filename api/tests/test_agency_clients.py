@@ -113,6 +113,7 @@ def _patched_client(active_org_id: int | None = None):
     mock_db = AsyncMock()
     mock_db.list_all_organizations = AsyncMock(return_value=_all_clients())
     mock_db.get_organization_resource_counts = AsyncMock(return_value=_counts())
+    mock_db.get_balances_for_orgs = AsyncMock(return_value={})
     mock_db.get_organizations_for_user = AsyncMock(return_value=_all_clients())
     mock_db.get_organization_by_id = AsyncMock(return_value=ACME)
     return mock_db

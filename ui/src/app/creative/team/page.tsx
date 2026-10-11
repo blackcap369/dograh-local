@@ -9,6 +9,7 @@ import {
   createStaffAccountApiV1AgencyStaffPost,
   deleteStaffAccountApiV1AgencyStaffStaffUserIdDelete,
   listAgencyClientsApiV1AgencyClientsGet,
+  listCreditBalancesApiV1AgencyCreditsGet,
   listDeletionRequestsApiV1AgencyDeletionRequestsGet,
   listStaffApiV1AgencyStaffGet,
   listTrashedClientsApiV1AgencyTrashGet,
@@ -18,9 +19,11 @@ import {
   resetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPost,
   restoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePost,
   setStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatch,
+  topUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPost,
 } from "@/client/sdk.gen";
 import type {
   AgencyClientSummary,
+  CreditBalancesResponse,
   DeletionRequestSummary,
   StaffAccountSummary,
   TrashedClientSummary,
@@ -88,6 +91,15 @@ function TeamContent() {
   const [requests, setRequests] = useState<DeletionRequestSummary[]>([]);
   const [clients, setClients] = useState<AgencyClientSummary[]>([]);
   const [trash, setTrash] = useState<TrashedClientSummary[]>([]);
+  const [creditBalances, setCreditBalances] = useState<
+    CreditBalancesResponse["businesses"]
+  >([]);
+  const [topUpTarget, setTopUpTarget] = useState<{
+    organizationId: number;
+    label: string;
+  } | null>(null);
+  const [topUpMinutes, setTopUpMinutes] = useState("");
+  const [isToppingUp, setIsToppingUp] = useState(false);
   const [loading, setLoading] = useState(true);
   const [purgeTarget, setPurgeTarget] = useState<TrashedClientSummary | null>(null);
   const [isPurging, setIsPurging] = useState(false);
@@ -112,18 +124,20 @@ function TeamContent() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const [staffResponse, requestResponse, clientsResponse, trashResponse] =
+      const [staffResponse, requestResponse, clientsResponse, trashResponse, creditsResponse] =
         await Promise.all([
           listStaffApiV1AgencyStaffGet(),
           listDeletionRequestsApiV1AgencyDeletionRequestsGet(),
           listAgencyClientsApiV1AgencyClientsGet(),
           listTrashedClientsApiV1AgencyTrashGet(),
+          listCreditBalancesApiV1AgencyCreditsGet(),
         ]);
       for (const response of [
         staffResponse,
         requestResponse,
         clientsResponse,
         trashResponse,
+        creditsResponse,
       ]) {
         if (response.error) {
           throw new Error(detailFromError(response.error, "Failed to load team data"));
@@ -133,6 +147,7 @@ function TeamContent() {
       setRequests(requestResponse.data ?? []);
       setClients(clientsResponse.data ?? []);
       setTrash(trashResponse.data ?? []);
+      setCreditBalances(creditsResponse.data?.businesses ?? []);
     } catch (err) {
       logger.error("Failed to load team page", err);
       toast.error(err instanceof Error ? err.message : "Failed to load team data");
@@ -348,6 +363,36 @@ function TeamContent() {
       setPurgeTarget(null);
     } finally {
       setIsPurging(false);
+    }
+  };
+
+  const handleTopUp = async () => {
+    if (!topUpTarget) return;
+    const minutes = parseInt(topUpMinutes, 10);
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      toast.error("Enter a positive number of minutes");
+      return;
+    }
+    try {
+      setIsToppingUp(true);
+      const response = await topUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPost({
+        path: { organization_id: topUpTarget.organizationId },
+        body: { minutes },
+      });
+      if (response.error || !response.data) {
+        throw new Error(detailFromError(response.error, "Could not add credits"));
+      }
+      toast.success(
+        `Added ${minutes} credits to "${response.data.label}" (${response.data.balance_minutes} total)`
+      );
+      setTopUpTarget(null);
+      setTopUpMinutes("");
+      await fetchData();
+    } catch (err) {
+      logger.error("Failed to top up credits", err);
+      toast.error(err instanceof Error ? err.message : "Could not add credits");
+    } finally {
+      setIsToppingUp(false);
     }
   };
 
@@ -740,6 +785,41 @@ function TeamContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Add credits dialog */}
+      <Dialog
+        open={!!topUpTarget}
+        onOpenChange={(open) => !open && setTopUpTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add credits</DialogTitle>
+            <DialogDescription>
+              Grant run minutes to {topUpTarget?.label}. Collect the payment
+              out-of-band; 1 credit = 1 minute of successful run time.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-2">
+            <Label htmlFor="topup-minutes">Minutes (credits) to add</Label>
+            <Input
+              id="topup-minutes"
+              type="number"
+              min={1}
+              value={topUpMinutes}
+              onChange={(e) => setTopUpMinutes(e.target.value)}
+              placeholder="e.g. 500"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTopUpTarget(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleTopUp} disabled={isToppingUp}>
+              {isToppingUp ? "Adding..." : "Add credits"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

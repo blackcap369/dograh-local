@@ -322,6 +322,10 @@ function ClientDetailContent() {
               <span className="text-right font-medium tabular-nums">
                 {client.member_count}
               </span>
+              <span className="text-muted-foreground">Credits</span>
+              <span className="text-right font-medium tabular-nums">
+                {client.credit_minutes} min
+              </span>
             </div>
           </CardContent>
         </Card>

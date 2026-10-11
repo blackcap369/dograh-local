@@ -57,6 +57,7 @@ def _patched_db(assigned: bool = False) -> AsyncMock:
     mock_db.list_all_organizations = AsyncMock(return_value=[ACME, GLOBEX])
     mock_db.list_organizations_for_staff = AsyncMock(return_value=[ACME])
     mock_db.get_organization_resource_counts = AsyncMock(return_value={})
+    mock_db.get_balances_for_orgs = AsyncMock(return_value={})
     mock_db.is_user_assigned_to_organization = AsyncMock(return_value=assigned)
     mock_db.get_organization_by_id = AsyncMock(return_value=ACME)
     return mock_db

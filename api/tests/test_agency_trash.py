@@ -55,6 +55,7 @@ def _make_app(user_id: int = OWNER_ID, agency_role: str = "owner"):
 def _patched_db() -> AsyncMock:
     mock_db = AsyncMock()
     mock_db.get_organization_by_id = AsyncMock(return_value=EMPTY)
+    mock_db.get_balances_for_orgs = AsyncMock(return_value={})
     mock_db.get_organization_resource_counts = AsyncMock(
         return_value={
             EMPTY.id: {

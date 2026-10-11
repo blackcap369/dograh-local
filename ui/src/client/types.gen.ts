@@ -329,6 +329,10 @@ export type AgencyClientSummary = {
      */
     deletion_pending?: boolean;
     /**
+     * Credit Minutes
+     */
+    credit_minutes?: number;
+    /**
      * Workflow Count
      */
     workflow_count?: number;
@@ -1963,6 +1967,44 @@ export type CredentialResponse = {
      * Updated At
      */
     updated_at: string | null;
+};
+
+/**
+ * CreditBalanceEntry
+ */
+export type CreditBalanceEntry = {
+    /**
+     * Organization Id
+     */
+    organization_id: number;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Balance Minutes
+     */
+    balance_minutes: number;
+};
+
+/**
+ * CreditBalancesResponse
+ */
+export type CreditBalancesResponse = {
+    /**
+     * Businesses
+     */
+    businesses: Array<CreditBalanceEntry>;
+};
+
+/**
+ * CreditTopUpRequest
+ */
+export type CreditTopUpRequest = {
+    /**
+     * Minutes
+     */
+    minutes: number;
 };
 
 /**
@@ -5880,6 +5922,12 @@ export type RunHealthResponse = {
      * Alerts
      */
     alerts: Array<FailureAlertEntry>;
+    /**
+     * Credit Minutes
+     */
+    credit_minutes?: {
+        [key: string]: number;
+    };
 };
 
 /**
@@ -8888,42 +8936,42 @@ export type InitiateCallApiV1TelephonyInitiateCallPostResponses = {
     200: unknown;
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunPostData = {
+export type HandleInboundRunApiV1TelephonyInboundRunGetData = {
     body?: never;
     path?: never;
     query?: never;
     url: '/api/v1/telephony/inbound/run';
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunPostErrors = {
+export type HandleInboundRunApiV1TelephonyInboundRunGetErrors = {
     /**
      * Not found
      */
     404: unknown;
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunPostResponses = {
+export type HandleInboundRunApiV1TelephonyInboundRunGetResponses = {
     /**
      * Successful Response
      */
     200: unknown;
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunPost2Data = {
+export type HandleInboundRunApiV1TelephonyInboundRunGet2Data = {
     body?: never;
     path?: never;
     query?: never;
     url: '/api/v1/telephony/inbound/run';
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunPost2Errors = {
+export type HandleInboundRunApiV1TelephonyInboundRunGet2Errors = {
     /**
      * Not found
      */
     404: unknown;
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunPost2Responses = {
+export type HandleInboundRunApiV1TelephonyInboundRunGet2Responses = {
     /**
      * Successful Response
      */
@@ -17182,6 +17230,89 @@ export type AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePos
 };
 
 export type AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostResponse = AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostResponses[keyof AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostResponses];
+
+export type ListCreditBalancesApiV1AgencyCreditsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/credits';
+};
+
+export type ListCreditBalancesApiV1AgencyCreditsGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListCreditBalancesApiV1AgencyCreditsGetError = ListCreditBalancesApiV1AgencyCreditsGetErrors[keyof ListCreditBalancesApiV1AgencyCreditsGetErrors];
+
+export type ListCreditBalancesApiV1AgencyCreditsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CreditBalancesResponse;
+};
+
+export type ListCreditBalancesApiV1AgencyCreditsGetResponse = ListCreditBalancesApiV1AgencyCreditsGetResponses[keyof ListCreditBalancesApiV1AgencyCreditsGetResponses];
+
+export type TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostData = {
+    body: CreditTopUpRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/credits/{organization_id}/top-up';
+};
+
+export type TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostError = TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostErrors[keyof TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostErrors];
+
+export type TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: CreditBalanceEntry;
+};
+
+export type TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostResponse = TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostResponses[keyof TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostResponses];
 
 export type ListStaffApiV1AgencyStaffGetData = {
     body?: never;

@@ -133,6 +133,19 @@ function DashboardContent() {
     { label: "Phone Numbers", value: totalPhoneNumbers },
   ];
 
+  // Credit balances (V2.5-billing): surface low balances next to failures --
+  // both mean "this business is about to stop working".
+  const lowCreditBusinesses = health
+    ? health.businesses.filter(
+        (b) => (health.credit_minutes?.[String(b.organization_id)] ?? 999) <= 30
+      )
+    : [];
+  const showHealthCard =
+    !!health &&
+    (health.alerts.length > 0 ||
+      health.businesses.some((b) => b.failed_24h > 0) ||
+      lowCreditBusinesses.length > 0);
+
   return (
     <div className="container mx-auto space-y-8 px-4 py-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -165,20 +178,22 @@ function DashboardContent() {
         ))}
       </div>
 
-      {health && (health.alerts.length > 0 || health.businesses.some((b) => b.failed_24h > 0)) && (
+      {showHealthCard && (
         <Card className="border-amber-500/40">
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <div>
               <CardTitle className="flex items-center gap-2">
                 Business health
                 <Badge variant="destructive">
-                  {health.alerts.length > 0
-                    ? `${health.alerts.length} open alert${health.alerts.length > 1 ? "s" : ""}`
-                    : "failures in the last 24h"}
+                  {health!.alerts.length > 0
+                    ? `${health!.alerts.length} open alert${health!.alerts.length > 1 ? "s" : ""}`
+                    : lowCreditBusinesses.length > 0
+                      ? "low credits"
+                      : "failures in the last 24h"}
                 </Badge>
               </CardTitle>
               <CardDescription>
-                Failed runs in the last {health.window_hours} hours, per
+                Failed runs in the last {health!.window_hours} hours, per
                 business. Fix the cause; the alert auto-clears on the next
                 successful run.
               </CardDescription>
@@ -228,6 +243,18 @@ function DashboardContent() {
                   </span>
                 </div>
               ))}
+            {lowCreditBusinesses.map((b) => (
+              <div
+                key={`credits-${b.organization_id}`}
+                className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-3 text-sm"
+              >
+                <span className="font-medium">{b.label}</span>
+                <span className="text-muted-foreground">
+                  {health!.credit_minutes?.[String(b.organization_id)] ?? 0} credits
+                  remaining — top up from the Team page
+                </span>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}

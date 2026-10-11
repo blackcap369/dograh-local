@@ -76,6 +76,10 @@ class AgencyClientSummary(BaseModel):
     # (V2.1d). The list renders a badge; the business is untouched until the
     # owner approves.
     deletion_pending: bool = False
+    # Credits remaining (1 credit = 1 minute of successful run time). The
+    # Clients list/detail surface the balance so the operator sees it where
+    # they choose the business, not only on the Team page.
+    credit_minutes: int = 0
     workflow_count: int = 0
     run_count: int = 0
     phone_number_count: int = 0
@@ -164,11 +168,17 @@ async def list_agency_clients(
     pending = await db_client.list_organization_ids_with_pending_deletion(
         [org.id for org in organizations]
     )
+    balances = await db_client.get_balances_for_orgs([org.id for org in organizations])
 
     # The `name or provider_id` contract lives in `_summary_for`, shared with
     # the single-client read so the two surfaces cannot drift.
     return [
-        _summary_for(org, counts.get(org.id), deletion_pending=org.id in pending)
+        _summary_for(
+            org,
+            counts.get(org.id),
+            deletion_pending=org.id in pending,
+            credit_minutes=balances.get(org.id, 0),
+        )
         for org in organizations
     ]
 
@@ -233,8 +243,12 @@ async def get_agency_client(
     pending = await db_client.list_organization_ids_with_pending_deletion(
         [organization.id]
     )
+    balances = await db_client.get_balances_for_orgs([organization.id])
     return _summary_for(
-        organization, stats, deletion_pending=organization.id in pending
+        organization,
+        stats,
+        deletion_pending=organization.id in pending,
+        credit_minutes=balances.get(organization.id, 0),
     )
 
 
@@ -677,6 +691,9 @@ class RunHealthResponse(BaseModel):
     window_hours: int
     businesses: list[RunHealthEntry]
     alerts: list[FailureAlertEntry]
+    # Credit balances (minutes remaining) for the same businesses; the
+    # dashboard raises a low-balance warning from this.
+    credit_minutes: dict[str, int] = {}
 
 
 @router.get("/health", response_model=RunHealthResponse)
@@ -706,6 +723,7 @@ async def get_agency_run_health(user: UserModel = Depends(get_user)):
     )
     alerts = await db_client.list_active_failure_alerts(org_ids)
     counts = await db_client.get_organization_resource_counts(org_ids)
+    balances = await db_client.get_balances_for_orgs(org_ids)
 
     labels = {org.id: _summary_for(org, counts.get(org.id)).label for org in organizations}
     return RunHealthResponse(
@@ -721,6 +739,7 @@ async def get_agency_run_health(user: UserModel = Depends(get_user)):
             for org_id in org_ids
         ],
         alerts=alerts,
+        credit_minutes={str(org_id): balances.get(org_id, 0) for org_id in org_ids},
     )
 
 
@@ -740,6 +759,75 @@ async def acknowledge_failure_alert(
         alert_id, alert.organization_id, user.id
     )
     return None
+
+
+# =============================================================================
+# Credit billing (owner only): 1 credit = 1 minute of successful run time
+# =============================================================================
+
+
+class CreditBalanceEntry(BaseModel):
+    organization_id: int
+    label: str
+    balance_minutes: int
+
+
+class CreditBalancesResponse(BaseModel):
+    businesses: list[CreditBalanceEntry]
+
+
+class CreditTopUpRequest(BaseModel):
+    minutes: int = Field(..., ge=1, le=100000)
+
+    @field_validator("minutes")
+    @classmethod
+    def _positive(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("minutes must be positive")
+        return value
+
+
+@router.get("/credits", response_model=CreditBalancesResponse)
+async def list_credit_balances(user: UserModel = Depends(require_agency_owner)):
+    """Every business's credit balance (minutes remaining)."""
+    organizations = [
+        org
+        for org in await db_client.list_all_organizations()
+        if not getattr(org, "archived", False)
+    ]
+    org_ids = [org.id for org in organizations]
+    balances = await db_client.get_balances_for_orgs(org_ids)
+    counts = await db_client.get_organization_resource_counts(org_ids)
+    return CreditBalancesResponse(
+        businesses=[
+            CreditBalanceEntry(
+                organization_id=org.id,
+                label=_summary_for(org, counts.get(org.id)).label,
+                balance_minutes=balances.get(org.id, 0),
+            )
+            for org in organizations
+        ]
+    )
+
+
+@router.post("/credits/{organization_id}/top-up", response_model=CreditBalanceEntry)
+async def top_up_credits(
+    organization_id: int,
+    request: CreditTopUpRequest,
+    user: UserModel = Depends(require_agency_owner),
+):
+    """Grant credits to a business. Payment is collected out-of-band; the
+    owner records it here."""
+    organization = await _require_organization(organization_id)
+    balance = await db_client.top_up(
+        organization.id, request.minutes, created_by=user.id
+    )
+    counts = await db_client.get_organization_resource_counts([organization.id])
+    return CreditBalanceEntry(
+        organization_id=organization.id,
+        label=_summary_for(organization, counts.get(organization.id)).label,
+        balance_minutes=balance.balance_minutes,
+    )
 
 
 # =============================================================================
@@ -996,6 +1084,7 @@ def _summary_for(
     organization,
     counts: dict | None,
     deletion_pending: bool = False,
+    credit_minutes: int = 0,
 ) -> AgencyClientSummary:
     """One business as the Clients surfaces render it.
 
@@ -1014,6 +1103,7 @@ def _summary_for(
         label=getattr(organization, "name", None) or organization.provider_id,
         archived=bool(getattr(organization, "archived", False)),
         deletion_pending=deletion_pending,
+        credit_minutes=credit_minutes,
         **(
             counts
             or {

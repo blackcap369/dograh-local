@@ -26,6 +26,7 @@ from api.errors.failure import failure_already_reported
 from api.errors.telephony_errors import TelephonyError
 from api.sdk_expose import sdk_expose
 from api.services.auth.depends import get_user
+from api.services.credit_billing import ensure_organization_has_credits
 from api.services.call_concurrency import (
     CallConcurrencyLimitError,
     WorkflowRunSlotAlreadyBoundError,
@@ -203,6 +204,7 @@ async def initiate_call(
                 use_draft=True,
                 include_template_context=True,
             )
+            await ensure_organization_has_credits(user.selected_organization_id)
             workflow_run = await db_client.create_workflow_run(
                 workflow_run_name,
                 workflow.id,
@@ -493,6 +495,7 @@ async def _create_inbound_workflow_run(
         raise HTTPException(status_code=404, detail="Workflow not found")
     run_inputs = await prepare_workflow_run_inputs(db_client, workflow)
 
+    await ensure_organization_has_credits(organization_id)
     workflow_run = await db_client.create_workflow_run(
         workflow_run_name,
         workflow_id,

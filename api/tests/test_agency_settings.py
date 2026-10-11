@@ -77,6 +77,7 @@ def _patched_db() -> AsyncMock:
     mock_db.create_user_with_email = AsyncMock(return_value=STAFF_ACCOUNT)
     mock_db.count_workflows_owned_by_user = AsyncMock(return_value=0)
     mock_db.get_organization_resource_counts = AsyncMock(return_value={})
+    mock_db.get_balances_for_orgs = AsyncMock(return_value={})
     return mock_db
 
 
