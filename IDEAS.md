@@ -49,6 +49,18 @@ Rules of the list:
 - **Build when:** the first client asks "what am I getting for this?" — or
   proactively after 2–3 clients are live.
 
+### Credit-based client billing (owner request, 2026-10-11)
+- **What:** replace the Dograh-cloud-style billing page with the agency's
+  own credit system: prepaid credits per client, auto-decremented per
+  successful run minute (usage data already exists per run), top-ups by the
+  owner, low-balance warning. Credit-based is easier to manage and explain
+  to clients than direct pricing.
+- **Why:** the current billing page only makes sense for Dograh's cloud
+  credits; an agency bills its own clients by its own metrics.
+- **Build when:** the first client agreement defines the credit rate
+  (credits per minute per agent type). Then the billing page is rewritten
+  to show client balances, consumption, and top-up history.
+
 ## Parked (low priority / unclear value today)
 
 ### Provider allow-listing
