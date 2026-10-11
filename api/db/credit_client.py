@@ -8,7 +8,7 @@ in-flight usage after the block. Every movement writes a transaction row.
 
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from api.db.base_client import BaseDBClient
 from api.db.models import (
@@ -80,11 +80,17 @@ class CreditClient(BaseDBClient):
                 )
             )
             balance = result.scalars().first()
+            seed = 0
             if balance is None:
+                # First write materializes the startup grant too, so the
+                # numbers reconcile: a business shown as "60 credits
+                # remaining" that receives a 500 top-up lands at 560.
                 balance = CreditBalanceModel(
-                    organization_id=organization_id, balance_minutes=0
+                    organization_id=organization_id,
+                    balance_minutes=DEFAULT_STARTUP_CREDITS,
                 )
                 session.add(balance)
+                seed = DEFAULT_STARTUP_CREDITS
                 await session.flush()
             balance.balance_minutes += minutes
             balance.updated_at = func.now()
@@ -92,7 +98,7 @@ class CreditClient(BaseDBClient):
             session.add(
                 CreditTransactionModel(
                     organization_id=organization_id,
-                    delta_minutes=minutes,
+                    delta_minutes=minutes + seed,
                     balance_after=new_total,
                     reason="top_up",
                     created_by=created_by,
