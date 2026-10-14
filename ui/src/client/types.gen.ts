@@ -490,6 +490,40 @@ export type AtlasCloudLlmService = {
 };
 
 /**
+ * AuditLogEntry
+ *
+ * One audit entry, as the Team page renders it.
+ */
+export type AuditLogEntry = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Action
+     */
+    action: string;
+    /**
+     * Actor Email
+     */
+    actor_email?: string | null;
+    /**
+     * Organization Id
+     */
+    organization_id?: number | null;
+    /**
+     * Detail
+     */
+    detail?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+};
+
+/**
  * AuthResponse
  */
 export type AuthResponse = {
@@ -8936,42 +8970,42 @@ export type InitiateCallApiV1TelephonyInitiateCallPostResponses = {
     200: unknown;
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunGetData = {
+export type HandleInboundRunApiV1TelephonyInboundRunPostData = {
     body?: never;
     path?: never;
     query?: never;
     url: '/api/v1/telephony/inbound/run';
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunGetErrors = {
+export type HandleInboundRunApiV1TelephonyInboundRunPostErrors = {
     /**
      * Not found
      */
     404: unknown;
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunGetResponses = {
+export type HandleInboundRunApiV1TelephonyInboundRunPostResponses = {
     /**
      * Successful Response
      */
     200: unknown;
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunGet2Data = {
+export type HandleInboundRunApiV1TelephonyInboundRunPost2Data = {
     body?: never;
     path?: never;
     query?: never;
     url: '/api/v1/telephony/inbound/run';
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunGet2Errors = {
+export type HandleInboundRunApiV1TelephonyInboundRunPost2Errors = {
     /**
      * Not found
      */
     404: unknown;
 };
 
-export type HandleInboundRunApiV1TelephonyInboundRunGet2Responses = {
+export type HandleInboundRunApiV1TelephonyInboundRunPost2Responses = {
     /**
      * Successful Response
      */
@@ -17313,6 +17347,52 @@ export type TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostResponses = {
 };
 
 export type TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostResponse = TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostResponses[keyof TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostResponses];
+
+export type ListAuditLogApiV1AgencyAuditLogGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/agency/audit-log';
+};
+
+export type ListAuditLogApiV1AgencyAuditLogGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListAuditLogApiV1AgencyAuditLogGetError = ListAuditLogApiV1AgencyAuditLogGetErrors[keyof ListAuditLogApiV1AgencyAuditLogGetErrors];
+
+export type ListAuditLogApiV1AgencyAuditLogGetResponses = {
+    /**
+     * Response List Audit Log Api V1 Agency Audit Log Get
+     *
+     * Successful Response
+     */
+    200: Array<AuditLogEntry>;
+};
+
+export type ListAuditLogApiV1AgencyAuditLogGetResponse = ListAuditLogApiV1AgencyAuditLogGetResponses[keyof ListAuditLogApiV1AgencyAuditLogGetResponses];
 
 export type ListStaffApiV1AgencyStaffGetData = {
     body?: never;

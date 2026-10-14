@@ -275,6 +275,41 @@ class RunFailureAlertModel(Base):
     )
 
 
+class AuditLogModel(Base):
+    """One append-only agency audit entry: who did what, to which business.
+
+    Written best-effort by the Creative surface for every destructive or
+    management action. No update or delete paths exist -- rows are history.
+    actor_user_id / organization_id are SET NULL on account deletion or
+    business purge so the record of what happened outlives the things it
+    talks about; actor_email and the business label ride in `detail` for
+    readability.
+    """
+
+    __tablename__ = "audit_log"
+    id = Column(Integer, primary_key=True, index=True)
+    action = Column(String(64), nullable=False)
+    actor_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    actor_email = Column(String, nullable=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    detail = Column(
+        JSON, nullable=False, default=dict, server_default=text("'{}'::json")
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+    __table_args__ = (Index("ix_audit_log_created", "created_at"),)
+
+
 class DeletionRequestModel(Base):
     """A staff member's request to delete a client business, pending the owner.
 

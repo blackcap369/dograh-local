@@ -26,7 +26,7 @@ Authorization is two-layered (see api/services/agency_access.py):
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from api.constants import AUTH_PROVIDER, OWNER_EMAILS, TRASH_RETENTION
@@ -39,6 +39,7 @@ from api.services.agency_access import (
     STAFF_ROLE,
 )
 from api.services.auth.depends import get_user, require_agency_owner
+from api.services.audit import record_audit
 from api.utils.auth import hash_password
 
 from api.constants import FAILURE_WINDOW_HOURS
@@ -274,6 +275,12 @@ async def create_agency_client(
         provider_id=f"org_local_{user.id}_{uuid4().hex[:8]}",
     )
     await db_client.add_user_to_organization(user.id, organization.id)
+    await record_audit(
+        "client.created",
+        user,
+        organization.id,
+        label=request.name,
+    )
     return OrganizationListItem(
         id=organization.id,
         provider_id=organization.provider_id,
@@ -295,7 +302,14 @@ async def rename_agency_client(
     """
     organization = await _require_organization(organization_id)
     await ensure_business_access(user, organization_id)
+    old_label = getattr(organization, "name", None) or organization.provider_id
     renamed = await db_client.rename_organization(organization.id, name=request.name)
+    await record_audit(
+        "client.renamed",
+        user,
+        organization.id,
+        **{"from": old_label, "to": request.name},
+    )
     return OrganizationListItem(
         id=renamed.id,
         provider_id=renamed.provider_id,
@@ -317,6 +331,9 @@ async def archive_agency_client(
     organization = await _require_organization(organization_id)
     await ensure_business_access(user, organization_id)
     await db_client.set_organization_archived(organization.id, True)
+    await record_audit(
+        "client.archived", user, organization.id, label=organization.provider_id
+    )
     return None
 
 
@@ -329,6 +346,9 @@ async def unarchive_agency_client(
     organization = await _require_organization(organization_id)
     await ensure_business_access(user, organization_id)
     await db_client.set_organization_archived(organization.id, False)
+    await record_audit(
+        "client.unarchived", user, organization.id, label=organization.provider_id
+    )
     return None
 
 
@@ -356,6 +376,9 @@ async def delete_agency_client(
     """
     organization = await _require_organization(organization_id)
     await db_client.clear_selected_organization_references(organization.id)
+    await record_audit(
+        "client.trashed", user, organization.id, label=organization.provider_id
+    )
     trashed = await db_client.mark_organization_deleted(organization.id)
     if trashed is None:
         # Raced with another delete of the same row; the caller's outcome
@@ -430,6 +453,13 @@ async def create_deletion_request(
             status_code=409,
             detail="A deletion request for this business is already pending",
         )
+    await record_audit(
+        "client.delete_requested",
+        user,
+        organization.id,
+        label=_summary_for(organization, None).label,
+        reason=request.reason,
+    )
     return _request_summary(created, organization, user)
 
 
@@ -510,6 +540,13 @@ async def approve_deletion_request(
     )
     await db_client.clear_selected_organization_references(organization.id)
     await db_client.mark_organization_deleted(organization.id)
+    await record_audit(
+        "client.delete_approved",
+        user,
+        organization.id,
+        label=getattr(organization, "name", None) or organization.provider_id,
+        requested_by_email=getattr(requester, "email", None),
+    )
     # The trash is the outcome; resolve the request so the queue clears. The
     # request row survives (the business row does too), which is the audit
     # trail of the decision.
@@ -525,7 +562,15 @@ async def reject_deletion_request(
     user: UserModel = Depends(require_agency_owner),
 ):
     """Reject a deletion request. The business is untouched."""
-    return await _resolve_deletion_request(request_id, "rejected", user)
+    resolved = await _resolve_deletion_request(request_id, "rejected", user)
+    await record_audit(
+        "client.delete_rejected",
+        user,
+        resolved.organization_id,
+        label=resolved.business_label,
+        requested_by_email=resolved.requested_by_email,
+    )
+    return resolved
 
 
 # =============================================================================
@@ -621,6 +666,9 @@ async def restore_trashed_client(
     """
     organization = await _require_trashed_organization(organization_id)
     restored = await db_client.restore_organization(organization.id)
+    await record_audit(
+        "client.restored", user, organization.id, label=organization.provider_id
+    )
     if restored is None:
         raise HTTPException(status_code=404, detail="Not found")
     return None
@@ -657,6 +705,14 @@ async def purge_trashed_client(
     await db_client.clear_selected_organization_references(organization.id)
     await db_client.clear_organization_users(organization.id)
     await db_client.delete_organization(organization.id)
+    await record_audit(
+        "client.purged",
+        user,
+        organization.id,
+        label=organization.provider_id,
+        workflow_count=stats["workflow_count"],
+        run_count=stats["run_count"],
+    )
     return None
 
 
@@ -823,11 +879,60 @@ async def top_up_credits(
         organization.id, request.minutes, created_by=user.id
     )
     counts = await db_client.get_organization_resource_counts([organization.id])
+    await record_audit(
+        "credits.top_up",
+        user,
+        organization.id,
+        label=_summary_for(organization, counts.get(organization.id)).label,
+        minutes=request.minutes,
+        balance_after=balance.balance_minutes,
+    )
     return CreditBalanceEntry(
         organization_id=organization.id,
         label=_summary_for(organization, counts.get(organization.id)).label,
         balance_minutes=balance.balance_minutes,
     )
+
+
+# =============================================================================
+# Audit log (owner only, read-only, append-only data)
+# =============================================================================
+
+
+class AuditLogEntry(BaseModel):
+    """One audit entry, as the Team page renders it."""
+
+    id: int
+    action: str
+    actor_email: Optional[str] = None
+    organization_id: Optional[int] = None
+    detail: dict = {}
+    created_at: Optional[datetime] = None
+
+
+@router.get("/audit-log", response_model=list[AuditLogEntry])
+async def list_audit_log(
+    limit: int = Query(default=50, ge=1, le=200),
+    user: UserModel = Depends(require_agency_owner),
+):
+    """The most recent agency audit entries, newest first.
+
+    Owner-only: entries name staff actions across every business, which is
+    exactly what the staff scoping exists to keep from individual staff
+    members.
+    """
+    rows = await db_client.list_recent_audit_entries(limit)
+    return [
+        AuditLogEntry(
+            id=row.id,
+            action=row.action,
+            actor_email=getattr(row, "actor_email", None),
+            organization_id=row.organization_id,
+            detail=getattr(row, "detail", {}) or {},
+            created_at=getattr(row, "created_at", None),
+        )
+        for row in rows
+    ]
 
 
 # =============================================================================
@@ -968,6 +1073,7 @@ async def create_staff_account(
         name=request.name,
         agency_role=STAFF_ROLE,
     )
+    await record_audit("staff.created", user, detail={"email": created.email})
     return _staff_summary(created, [])
 
 
@@ -986,6 +1092,11 @@ async def set_staff_suspended(
     target = await _require_staff_account(staff_user_id)
     await db_client.set_user_suspended(staff_user_id, request.suspended)
     target.is_suspended = request.suspended
+    await record_audit(
+        "staff.suspended" if request.suspended else "staff.reactivated",
+        user,
+        detail={"email": getattr(target, "email", None)},
+    )
     assigned = await db_client.list_organizations_for_staff(staff_user_id)
     return _staff_summary(target, assigned)
 
@@ -998,9 +1109,13 @@ async def reset_staff_password(
 ):
     """Overwrite a staff password. The owner delivers the new one directly."""
     target = await _require_staff_account(staff_user_id)
-    del target  # guards only; the write is by id
     await db_client.set_user_password(
         staff_user_id, hash_password(request.new_password)
+    )
+    await record_audit(
+        "staff.password_reset",
+        user,
+        detail={"email": getattr(target, "email", None)},
     )
     return None
 
@@ -1029,6 +1144,14 @@ async def replace_staff_assignments(
 
     await db_client.set_staff_assignments(staff_user_id, unique_ids)
     assigned = await db_client.list_organizations_for_staff(staff_user_id)
+    await record_audit(
+        "staff.assignments_updated",
+        user,
+        detail={
+            "email": getattr(target, "email", None),
+            "organization_ids": unique_ids,
+        },
+    )
     return _staff_summary(target, assigned)
 
 
@@ -1044,6 +1167,7 @@ async def delete_staff_account(
     the suspend alternative rather than as a 500. Assignments cascade via FK.
     """
     target = await _require_staff_account(staff_user_id)
+    staff_email = getattr(target, "email", None)
     del target
     workflow_count = await db_client.count_workflows_owned_by_user(staff_user_id)
     if workflow_count > 0:
@@ -1058,6 +1182,11 @@ async def delete_staff_account(
                 "workflow_count": workflow_count,
             },
         )
+    await record_audit(
+        "staff.deleted",
+        user,
+        detail={"email": staff_email},
+    )
     await db_client.delete_user(staff_user_id)
     return None
 

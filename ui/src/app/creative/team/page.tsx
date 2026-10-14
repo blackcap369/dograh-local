@@ -9,6 +9,7 @@ import {
   createStaffAccountApiV1AgencyStaffPost,
   deleteStaffAccountApiV1AgencyStaffStaffUserIdDelete,
   listAgencyClientsApiV1AgencyClientsGet,
+  listAuditLogApiV1AgencyAuditLogGet,
   listCreditBalancesApiV1AgencyCreditsGet,
   listDeletionRequestsApiV1AgencyDeletionRequestsGet,
   listStaffApiV1AgencyStaffGet,
@@ -23,6 +24,7 @@ import {
 } from "@/client/sdk.gen";
 import type {
   AgencyClientSummary,
+  AuditLogEntry,
   CreditBalancesResponse,
   DeletionRequestSummary,
   StaffAccountSummary,
@@ -121,6 +123,36 @@ function TeamContent() {
   const [deleteTarget, setDeleteTarget] = useState<StaffAccountSummary | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [auditEntries, setAuditEntries] = useState<AuditLogEntry[]>([]);
+
+  const loadAudit = useCallback(async () => {
+    const response = await listAuditLogApiV1AgencyAuditLogGet();
+    if (!response.error) setAuditEntries(response.data ?? []);
+  }, []);
+
+  const AUDIT_ACTION_LABELS: Record<string, string> = {
+    "client.created": "Created business",
+    "client.renamed": "Renamed business",
+    "client.archived": "Archived business",
+    "client.unarchived": "Removed business from archive",
+    "client.trashed": "Moved business to trash",
+    "client.restored": "Restored business from trash",
+    "client.purged": "Permanently destroyed business",
+    "client.delete_requested": "Requested business deletion",
+    "client.delete_approved": "Approved deletion request",
+    "client.delete_rejected": "Rejected deletion request",
+    "credits.top_up": "Added credits",
+    "staff.created": "Created staff account",
+    "staff.suspended": "Suspended staff account",
+    "staff.reactivated": "Reactivated staff account",
+    "staff.password_reset": "Reset staff password",
+    "staff.assignments_updated": "Updated client assignments",
+    "staff.deleted": "Deleted staff account",
+    "alert.acknowledged": "Acknowledged failure alert",
+  };
+
+  const auditLabel = (action: string) => AUDIT_ACTION_LABELS[action] ?? action;
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
@@ -148,6 +180,8 @@ function TeamContent() {
       setClients(clientsResponse.data ?? []);
       setTrash(trashResponse.data ?? []);
       setCreditBalances(creditsResponse.data?.businesses ?? []);
+      const auditResponse = await listAuditLogApiV1AgencyAuditLogGet();
+      if (!auditResponse.error) setAuditEntries(auditResponse.data ?? []);
     } catch (err) {
       logger.error("Failed to load team page", err);
       toast.error(err instanceof Error ? err.message : "Failed to load team data");
@@ -518,6 +552,109 @@ function TeamContent() {
                     >
                       Delete forever
                     </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Credits</CardTitle>
+          <CardDescription>
+            1 credit = 1 minute of successful run time, deducted
+            automatically. A business at zero credits cannot start new calls.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {creditBalances.length === 0 ? (
+            <p className="py-4 text-sm text-muted-foreground">
+              No businesses yet.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border/60">
+              {creditBalances.map((entry) => {
+                const low = entry.balance_minutes <= 30;
+                return (
+                  <li
+                    key={entry.organization_id}
+                    className="flex flex-wrap items-center justify-between gap-3 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">
+                        {entry.label}{" "}
+                        {low && (
+                          <Badge variant="destructive">Low credits</Badge>
+                        )}
+                      </p>
+                      <p className="text-sm text-muted-foreground tabular-nums">
+                        {entry.balance_minutes} credits remaining
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setTopUpTarget({
+                          organizationId: entry.organization_id,
+                          label: entry.label,
+                        });
+                        setTopUpMinutes("");
+                      }}
+                    >
+                      Add credits
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Audit log</CardTitle>
+          <CardDescription>
+            The most recent agency actions — who did what, to which business.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {auditEntries.length === 0 ? (
+            <p className="py-4 text-sm text-muted-foreground">
+              No actions recorded yet.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border/60">
+              {auditEntries.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="flex flex-wrap items-center justify-between gap-3 py-2.5 text-sm"
+                >
+                  <div className="min-w-0">
+                    <span className="font-medium">{auditLabel(entry.action)}</span>
+                    {typeof entry.detail?.label === "string" && (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        — {entry.detail.label}
+                      </span>
+                    )}
+                    {typeof entry.detail?.email === "string" && (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        ({entry.detail.email})
+                      </span>
+                    )}
+                  </div>
+                  <div className="shrink-0 text-right text-muted-foreground">
+                    <p>{entry.actor_email ?? "system"}</p>
+                    {entry.created_at && (
+                      <p className="text-xs">
+                        {new Date(entry.created_at).toLocaleString()}
+                      </p>
+                    )}
                   </div>
                 </li>
               ))}
