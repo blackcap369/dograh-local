@@ -527,6 +527,7 @@ class TestWorkflowEndpointsIsolation:
 
         with patch("api.routes.workflow.db_client") as mock_db:
             mock_db.get_workflow = AsyncMock(return_value=None)
+            mock_db.get_workflow_by_id = AsyncMock(return_value=None)
 
             response = client.get("/api/v1/workflow/fetch/99999")
 
@@ -617,6 +618,7 @@ class TestWorkflowEndpointsIsolation:
 
         with patch("api.routes.workflow.db_client") as mock_db:
             mock_db.get_workflow = AsyncMock(return_value=None)
+            mock_db.get_workflow_by_id = AsyncMock(return_value=None)
             mock_db.update_workflow = AsyncMock()
 
             # No workflow_definition -> skips the get_workflow ownership check.

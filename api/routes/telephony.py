@@ -153,6 +153,11 @@ async def initiate_call(
     workflow = await db_client.get_workflow(
         request.workflow_id, organization_id=user.selected_organization_id
     )
+    if workflow is None:
+        # The operator may stand in a different business than the agent;
+        # runs are stamped with the agent's own organization (see below), so
+        # the lookup must fall back to it rather than 404.
+        workflow = await db_client.get_workflow_by_id(request.workflow_id)
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     execution_user_id = _get_execution_user_id(workflow)
@@ -204,7 +209,7 @@ async def initiate_call(
                 use_draft=True,
                 include_template_context=True,
             )
-            await ensure_organization_has_credits(user.selected_organization_id)
+            await ensure_organization_has_credits(workflow.organization_id)
             workflow_run = await db_client.create_workflow_run(
                 workflow_run_name,
                 workflow.id,
@@ -212,13 +217,13 @@ async def initiate_call(
                 user_id=execution_user_id,
                 call_type=CallType.OUTBOUND,
                 initial_context=run_inputs.initial_context,
-                organization_id=user.selected_organization_id,
+                organization_id=workflow.organization_id,
                 definition_id=run_inputs.definition_id,
             )
             workflow_run_id = workflow_run.id
         else:
             workflow_run = await db_client.get_workflow_run(
-                workflow_run_id, organization_id=user.selected_organization_id
+                workflow_run_id, organization_id=workflow.organization_id
             )
             if not workflow_run:
                 raise HTTPException(status_code=400, detail="Workflow run not found")

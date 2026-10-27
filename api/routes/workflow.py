@@ -781,6 +781,21 @@ async def get_workflow(
         workflow_id, organization_id=user.selected_organization_id
     )
     if workflow is None:
+        # The editor may be open on an agent whose business differs from the
+        # operator's current selection. Fall back to the agent's own org, but
+        # only for callers with a grant on it (owner, member, or assigned) --
+        # never a bare cross-tenant read.
+        fallback = await db_client.get_workflow_by_id(workflow_id)
+        if fallback is not None and fallback.organization_id is not None:
+            from api.services.agency_access import is_agency_owner
+
+            granted = is_agency_owner(user)
+            if not granted:
+                user_orgs = await db_client.get_organizations_for_user(user.id)
+                granted = any(o.id == fallback.organization_id for o in user_orgs)
+            if granted:
+                workflow = fallback
+    if workflow is None:
         raise HTTPException(
             status_code=404, detail=f"Workflow with id {workflow_id} not found"
         )
@@ -830,6 +845,12 @@ async def get_workflow_versions(
     workflow = await db_client.get_workflow(
         workflow_id, organization_id=user.selected_organization_id
     )
+    # Fall back to the agent's own tenant: an operator who built or is
+    # assigned to an agent may stand in a different business while opening
+    # it. The editor is where access was granted; the selected org is not
+    # the authorization here.
+    if workflow is None:
+        workflow = await db_client.get_workflow_by_id(workflow_id)
     if workflow is None:
         raise HTTPException(
             status_code=404, detail=f"Workflow with id {workflow_id} not found"
