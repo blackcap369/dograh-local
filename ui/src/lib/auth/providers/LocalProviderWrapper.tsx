@@ -21,8 +21,16 @@ export function LocalProviderWrapper({ children }: { children: React.ReactNode }
         if (response.ok) {
           const data = await response.json();
           tokenRef.current = data.token;
-          setUser(data.user);
-          logger.info('OSS auth initialized', { user: data.user });
+          // The backend emits snake_case (agency_role) and the session cookie
+          // stores that response verbatim; normalize once here, the single
+          // place the cookie user enters the client app.
+          const rawUser = data.user ?? null;
+          setUser(
+            rawUser
+              ? { ...rawUser, agencyRole: rawUser.agency_role ?? rawUser.agencyRole }
+              : null
+          );
+          logger.info('OSS auth initialized', { user: rawUser });
         } else if (response.status === 401) {
           // No token - redirect to login (but not if already on auth pages)
           if (!window.location.pathname.startsWith('/auth/')) {

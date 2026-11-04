@@ -239,6 +239,118 @@ export type ActiveCallsResponse = {
 };
 
 /**
+ * AgencyClientDeleteImpact
+ *
+ * What deleting a business would destroy, and whether it is allowed.
+ *
+ * Returned ahead of any delete so the UI can show a breakdown rather than a
+ * confirm dialog that either works or 409s with nothing to explain it.
+ */
+export type AgencyClientDeleteImpact = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Workflow Count
+     */
+    workflow_count: number;
+    /**
+     * Run Count
+     */
+    run_count: number;
+    /**
+     * Phone Number Count
+     */
+    phone_number_count: number;
+    /**
+     * Member Count
+     */
+    member_count: number;
+    /**
+     * Deletable
+     */
+    deletable: boolean;
+    /**
+     * Blocking Reason
+     */
+    blocking_reason?: string | null;
+};
+
+/**
+ * AgencyClientRenameRequest
+ *
+ * Body for renaming a business.
+ *
+ * Name only. `provider_id` is the sole key organizations are looked up by, so
+ * accepting one here would be a cross-tenant collision and impersonation
+ * primitive -- and a rename that touched it would break the org stamped on every
+ * workflow and call record that references this business.
+ */
+export type AgencyClientRenameRequest = {
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
+ * AgencyClientSummary
+ *
+ * One business, as the Clients page renders it.
+ *
+ * `label` is `name or provider_id`. `organizations.name` is nullable by design --
+ * it post-dates the backfill and Stack-created orgs never set it -- so the
+ * fallback is the contract here rather than a defensive nicety.
+ */
+export type AgencyClientSummary = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Provider Id
+     */
+    provider_id: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Archived
+     */
+    archived?: boolean;
+    /**
+     * Deletion Pending
+     */
+    deletion_pending?: boolean;
+    /**
+     * Credit Minutes
+     */
+    credit_minutes?: number;
+    /**
+     * Workflow Count
+     */
+    workflow_count?: number;
+    /**
+     * Run Count
+     */
+    run_count?: number;
+    /**
+     * Phone Number Count
+     */
+    phone_number_count?: number;
+    /**
+     * Member Count
+     */
+    member_count?: number;
+};
+
+/**
  * AmbientNoiseConfigurationDefaults
  */
 export type AmbientNoiseConfigurationDefaults = {
@@ -336,6 +448,20 @@ export type AssemblyAisttConfiguration = {
 };
 
 /**
+ * AssignedClient
+ */
+export type AssignedClient = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Label
+     */
+    label: string;
+};
+
+/**
  * Atlas Cloud
  *
  * Atlas Cloud OpenAI-compatible LLM API.
@@ -361,6 +487,40 @@ export type AtlasCloudLlmService = {
      * Atlas Cloud OpenAI-compatible API endpoint.
      */
     base_url?: string;
+};
+
+/**
+ * AuditLogEntry
+ *
+ * One audit entry, as the Team page renders it.
+ */
+export type AuditLogEntry = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Action
+     */
+    action: string;
+    /**
+     * Actor Email
+     */
+    actor_email?: string | null;
+    /**
+     * Organization Id
+     */
+    organization_id?: number | null;
+    /**
+     * Detail
+     */
+    detail?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Created At
+     */
+    created_at?: string | null;
 };
 
 /**
@@ -657,7 +817,13 @@ export type ByokPipelineAiModelConfiguration = {
         provider: 'xai';
     } & XaittsConfiguration) | ({
         provider: 'lmnt';
-    } & LmntTtsConfiguration);
+    } & LmntTtsConfiguration) | ({
+        provider: 'rumik';
+    } & RumikTtsConfiguration) | ({
+        provider: 'soniox';
+    } & SonioxTtsConfiguration) | ({
+        provider: 'fishaudio';
+    } & FishAudioTtsConfiguration);
     /**
      * Stt
      */
@@ -1838,6 +2004,44 @@ export type CredentialResponse = {
 };
 
 /**
+ * CreditBalanceEntry
+ */
+export type CreditBalanceEntry = {
+    /**
+     * Organization Id
+     */
+    organization_id: number;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Balance Minutes
+     */
+    balance_minutes: number;
+};
+
+/**
+ * CreditBalancesResponse
+ */
+export type CreditBalancesResponse = {
+    /**
+     * Businesses
+     */
+    businesses: Array<CreditBalanceEntry>;
+};
+
+/**
+ * CreditTopUpRequest
+ */
+export type CreditTopUpRequest = {
+    /**
+     * Minutes
+     */
+    minutes: number;
+};
+
+/**
  * CurrentUsageResponse
  */
 export type CurrentUsageResponse = {
@@ -2064,6 +2268,52 @@ export type DefaultConfigurationsResponse = {
     default_call_dispositions: Array<CallDispositionOption>;
     text_chat_inactivity_timeout_constraints: TextChatInactivityTimeoutConstraints;
     widget_text_defaults: WidgetTexts;
+};
+
+/**
+ * DeletionRequestCreateRequest
+ */
+export type DeletionRequestCreateRequest = {
+    /**
+     * Reason
+     */
+    reason?: string | null;
+};
+
+/**
+ * DeletionRequestSummary
+ *
+ * One deletion request, as the owner's queue renders it.
+ */
+export type DeletionRequestSummary = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Organization Id
+     */
+    organization_id: number;
+    /**
+     * Business Label
+     */
+    business_label: string;
+    /**
+     * Requested By Email
+     */
+    requested_by_email?: string | null;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+    /**
+     * Status
+     */
+    status: string;
 };
 
 /**
@@ -2684,6 +2934,44 @@ export type EndTextChatSessionRequest = {
 };
 
 /**
+ * ExotelConfigurationRequest
+ */
+export type ExotelConfigurationRequest = {
+    /**
+     * Provider
+     */
+    provider?: 'exotel';
+    /**
+     * Account Sid
+     *
+     * Exotel Account SID
+     */
+    account_sid: string;
+    /**
+     * Api Key
+     *
+     * Exotel API Key
+     */
+    api_key: string;
+    /**
+     * Api Token
+     *
+     * Exotel API Token
+     */
+    api_token: string;
+    /**
+     * Api Base Url
+     *
+     * Exotel API base URL. Use https://api.in.exotel.com for India or https://api.exotel.com for other regions.
+     */
+    api_base_url?: string;
+    /**
+     * From Numbers
+     */
+    from_numbers?: Array<string>;
+};
+
+/**
  * ExternalPBXFieldMapping
  *
  * Map one gathered-context value to a provider-native field.
@@ -2697,6 +2985,50 @@ export type ExternalPbxFieldMapping = {
      * Destination Field
      */
     destination_field: string;
+};
+
+/**
+ * FailureAlertEntry
+ *
+ * One open failure alert, as the health card renders it.
+ */
+export type FailureAlertEntry = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Organization Id
+     */
+    organization_id: number;
+    /**
+     * Business Label
+     */
+    business_label: string;
+    /**
+     * Workflow Id
+     */
+    workflow_id: number;
+    /**
+     * Agent Name
+     */
+    agent_name: string;
+    /**
+     * Failure Count
+     */
+    failure_count: number;
+    /**
+     * Last Error
+     */
+    last_error?: string | null;
+    /**
+     * Last Failed Run Id
+     */
+    last_failed_run_id?: number | null;
+    /**
+     * Updated At
+     */
+    updated_at?: string | null;
 };
 
 /**
@@ -2739,6 +3071,46 @@ export type FileMetadataResponse = {
     metadata: {
         [key: string]: unknown;
     } | null;
+};
+
+/**
+ * Fish Audio
+ *
+ * Fish Audio streaming TTS with custom voice cloning support.
+ */
+export type FishAudioTtsConfiguration = {
+    /**
+     * Provider
+     */
+    provider?: 'fishaudio';
+    /**
+     * Api Key
+     */
+    api_key: string | Array<string>;
+    /**
+     * Model
+     *
+     * Fish Audio TTS model.
+     */
+    model?: string;
+    /**
+     * Voice
+     *
+     * Fish Audio voice model reference_id. Create voices at fish.audio.
+     */
+    voice?: string | null;
+    /**
+     * Language
+     *
+     * Language code for synthesis.
+     */
+    language?: string | null;
+    /**
+     * Latency
+     *
+     * Latency mode: 'balanced' (lowest TTFA) or 'normal'.
+     */
+    latency?: string;
 };
 
 /**
@@ -4461,7 +4833,47 @@ export type OrganizationContextResponse = {
      * Organization Provider Id
      */
     organization_provider_id?: string | null;
+    /**
+     * Organization Name
+     */
+    organization_name?: string | null;
     model_services: OrganizationModelServicesContext;
+};
+
+/**
+ * OrganizationCreateRequest
+ *
+ * Body for creating a new business.
+ *
+ * Name only, deliberately. `provider_id` is the sole key organizations are looked up
+ * by, so accepting one from a caller would let a tenant collide with or impersonate
+ * another -- it is minted server-side instead.
+ */
+export type OrganizationCreateRequest = {
+    /**
+     * Name
+     *
+     * Human-facing client label, e.g. 'Acme Corp'.
+     */
+    name: string;
+};
+
+/**
+ * OrganizationListItem
+ */
+export type OrganizationListItem = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Provider Id
+     */
+    provider_id: string;
+    /**
+     * Name
+     */
+    name?: string | null;
 };
 
 /**
@@ -4514,6 +4926,22 @@ export type OrganizationPreferences = {
     disposition_mapping?: {
         [key: string]: string;
     };
+};
+
+/**
+ * OrganizationSwitchRequest
+ *
+ * Body for selecting the caller's active organization.
+ *
+ * `organization_id` is the local integer primary key, matching the `id` returned by
+ * GET /organizations/mine -- it is never trusted on its own to imply membership; the
+ * switch endpoint re-checks the association table before writing.
+ */
+export type OrganizationSwitchRequest = {
+    /**
+     * Organization Id
+     */
+    organization_id: number;
 };
 
 /**
@@ -4955,6 +5383,62 @@ export type PropertySpec = {
 export type PropertyType = 'string' | 'number' | 'boolean' | 'options' | 'multi_options' | 'fixed_collection' | 'json' | 'tool_refs' | 'document_refs' | 'recording_ref' | 'credential_ref' | 'mention_textarea' | 'url';
 
 /**
+ * ProviderKeyCreateRequest
+ *
+ * Body for saving an API key into the organization's vault.
+ */
+export type ProviderKeyCreateRequest = {
+    /**
+     * Service
+     */
+    service: string;
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Alias
+     */
+    alias: string;
+    /**
+     * Api Key
+     */
+    api_key: string;
+};
+
+/**
+ * ProviderKeyResponse
+ *
+ * A saved key, masked. The raw key never leaves the server.
+ */
+export type ProviderKeyResponse = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Service
+     */
+    service: string;
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Alias
+     */
+    alias: string;
+    /**
+     * Masked Key
+     */
+    masked_key: string;
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+};
+
+/**
  * ProviderSetupChecklist
  *
  * A configuration's setup progress, as computed by its provider.
@@ -5389,6 +5873,98 @@ export type RimeTtsConfiguration = {
 };
 
 /**
+ * Rumik AI
+ *
+ * Rumik AI real-time TTS with expressive voice synthesis.
+ */
+export type RumikTtsConfiguration = {
+    /**
+     * Provider
+     */
+    provider?: 'rumik';
+    /**
+     * Api Key
+     */
+    api_key: string | Array<string>;
+    /**
+     * Model
+     *
+     * Rumik TTS model. 'muga' is the default; 'mulberry' supports expressive voice descriptions.
+     */
+    model?: string;
+    /**
+     * Voice
+     *
+     * Rumik speaker voice ID (e.g. 'speaker_1').
+     */
+    voice?: string | null;
+    /**
+     * Base Url
+     *
+     * Rumik gateway WebSocket URL.
+     */
+    base_url: string;
+    /**
+     * Language
+     *
+     * Language code for synthesis (reserved for provider compatibility).
+     */
+    language?: string | null;
+};
+
+/**
+ * RunHealthEntry
+ */
+export type RunHealthEntry = {
+    /**
+     * Organization Id
+     */
+    organization_id: number;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Runs 24H
+     */
+    runs_24h: number;
+    /**
+     * Failed 24H
+     */
+    failed_24h: number;
+    /**
+     * Last Failure
+     */
+    last_failure?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
+ * RunHealthResponse
+ */
+export type RunHealthResponse = {
+    /**
+     * Window Hours
+     */
+    window_hours: number;
+    /**
+     * Businesses
+     */
+    businesses: Array<RunHealthEntry>;
+    /**
+     * Alerts
+     */
+    alerts: Array<FailureAlertEntry>;
+    /**
+     * Credit Minutes
+     */
+    credit_minutes?: {
+        [key: string]: number;
+    };
+};
+
+/**
  * S3SignedUrlResponse
  */
 export type S3SignedUrlResponse = {
@@ -5749,6 +6325,46 @@ export type SmallestAittsConfiguration = {
 };
 
 /**
+ * Soniox
+ *
+ * Soniox real-time streaming TTS with word-level timestamps.
+ */
+export type SonioxTtsConfiguration = {
+    /**
+     * Provider
+     */
+    provider?: 'soniox';
+    /**
+     * Api Key
+     */
+    api_key: string | Array<string>;
+    /**
+     * Model
+     *
+     * Soniox TTS model.
+     */
+    model?: string;
+    /**
+     * Voice
+     *
+     * Soniox voice name (e.g. 'Bryce', 'Adrian').
+     */
+    voice?: string;
+    /**
+     * Language
+     *
+     * BCP-47 language code for synthesis.
+     */
+    language?: string;
+    /**
+     * Speed
+     *
+     * Speech rate multiplier (0.7 to 1.3). None uses server default.
+     */
+    speed?: number | null;
+};
+
+/**
  * Local Models (Speaches)
  *
  * Self-hosted OpenAI-compatible local models. See the Speaches project for setup and supported backends.
@@ -5880,6 +6496,94 @@ export type SpeechmaticsSttConfiguration = {
      * ISO 639-1 language code.
      */
     language?: string;
+};
+
+/**
+ * StaffAccountSummary
+ *
+ * One staff account, as the access-management page renders it.
+ */
+export type StaffAccountSummary = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Email
+     */
+    email?: string | null;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Suspended
+     */
+    suspended?: boolean;
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+    /**
+     * Assigned Clients
+     */
+    assigned_clients?: Array<AssignedClient>;
+};
+
+/**
+ * StaffAssignmentsRequest
+ *
+ * The staff member's full assignment set; the saved list replaces the old.
+ */
+export type StaffAssignmentsRequest = {
+    /**
+     * Organization Ids
+     */
+    organization_ids: Array<number>;
+};
+
+/**
+ * StaffCreateRequest
+ *
+ * Body for creating a staff account.
+ *
+ * The owner picks the password and hands it over out-of-band; there is no
+ * email dispatch in this fork. No organization is created and no bootstrap
+ * runs -- a staff account is an access grant, not a tenant.
+ */
+export type StaffCreateRequest = {
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Password
+     */
+    password: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+};
+
+/**
+ * StaffPasswordResetRequest
+ */
+export type StaffPasswordResetRequest = {
+    /**
+     * New Password
+     */
+    new_password: string;
+};
+
+/**
+ * StaffSuspendRequest
+ */
+export type StaffSuspendRequest = {
+    /**
+     * Suspended
+     */
+    suspended: boolean;
 };
 
 /**
@@ -6033,6 +6737,8 @@ export type TelephonyConfigurationCreateRequest = {
     } & AriConfigurationRequest) | ({
         provider: 'cloudonix';
     } & CloudonixConfigurationRequest) | ({
+        provider: 'exotel';
+    } & ExotelConfigurationRequest) | ({
         provider: 'plivo';
     } & PlivoConfigurationRequest) | ({
         provider: 'telnyx';
@@ -6197,6 +6903,8 @@ export type TelephonyConfigurationUpdateRequest = {
     } & AriConfigurationRequest) | ({
         provider: 'cloudonix';
     } & CloudonixConfigurationRequest) | ({
+        provider: 'exotel';
+    } & ExotelConfigurationRequest) | ({
         provider: 'plivo';
     } & PlivoConfigurationRequest) | ({
         provider: 'telnyx';
@@ -6666,6 +7374,54 @@ export type TransferCallToolDefinition = {
 };
 
 /**
+ * TrashedClientSummary
+ *
+ * One trashed business, as the owner's trash renders it.
+ */
+export type TrashedClientSummary = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Provider Id
+     */
+    provider_id: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Archived
+     */
+    archived?: boolean;
+    /**
+     * Deleted At
+     */
+    deleted_at?: string | null;
+    /**
+     * Purge Eligible At
+     */
+    purge_eligible_at?: string | null;
+    /**
+     * Workflow Count
+     */
+    workflow_count?: number;
+    /**
+     * Run Count
+     */
+    run_count?: number;
+    /**
+     * Phone Number Count
+     */
+    phone_number_count?: number;
+    /**
+     * Member Count
+     */
+    member_count?: number;
+};
+
+/**
  * TriggerCallRequest
  *
  * Request model for triggering a call via API
@@ -7116,6 +7872,10 @@ export type UserResponse = {
      * Provider Id
      */
     provider_id?: string | null;
+    /**
+     * Agency Role
+     */
+    agency_role?: string;
 };
 
 /**
@@ -8231,6 +8991,27 @@ export type HandleInboundRunApiV1TelephonyInboundRunPostResponses = {
     200: unknown;
 };
 
+export type HandleInboundRunApiV1TelephonyInboundRunPost2Data = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/telephony/inbound/run';
+};
+
+export type HandleInboundRunApiV1TelephonyInboundRunPost2Errors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+};
+
+export type HandleInboundRunApiV1TelephonyInboundRunPost2Responses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type HandleInboundFallbackApiV1TelephonyInboundFallbackPostData = {
     body?: never;
     path?: never;
@@ -8395,6 +9176,38 @@ export type HandleCloudonixCdrApiV1TelephonyCloudonixCdrPostErrors = {
 };
 
 export type HandleCloudonixCdrApiV1TelephonyCloudonixCdrPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type HandleExotelStatusCallbackApiV1TelephonyExotelStatusCallbackWorkflowRunIdPostData = {
+    body?: never;
+    path: {
+        /**
+         * Workflow Run Id
+         */
+        workflow_run_id: number;
+    };
+    query?: never;
+    url: '/api/v1/telephony/exotel/status-callback/{workflow_run_id}';
+};
+
+export type HandleExotelStatusCallbackApiV1TelephonyExotelStatusCallbackWorkflowRunIdPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type HandleExotelStatusCallbackApiV1TelephonyExotelStatusCallbackWorkflowRunIdPostError = HandleExotelStatusCallbackApiV1TelephonyExotelStatusCallbackWorkflowRunIdPostErrors[keyof HandleExotelStatusCallbackApiV1TelephonyExotelStatusCallbackWorkflowRunIdPostErrors];
+
+export type HandleExotelStatusCallbackApiV1TelephonyExotelStatusCallbackWorkflowRunIdPostResponses = {
     /**
      * Successful Response
      */
@@ -11678,6 +12491,125 @@ export type GetCurrentOrganizationContextApiV1OrganizationsContextGetResponses =
 
 export type GetCurrentOrganizationContextApiV1OrganizationsContextGetResponse = GetCurrentOrganizationContextApiV1OrganizationsContextGetResponses[keyof GetCurrentOrganizationContextApiV1OrganizationsContextGetResponses];
 
+export type GetMyOrganizationsApiV1OrganizationsMineGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/organizations/mine';
+};
+
+export type GetMyOrganizationsApiV1OrganizationsMineGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetMyOrganizationsApiV1OrganizationsMineGetError = GetMyOrganizationsApiV1OrganizationsMineGetErrors[keyof GetMyOrganizationsApiV1OrganizationsMineGetErrors];
+
+export type GetMyOrganizationsApiV1OrganizationsMineGetResponses = {
+    /**
+     * Response Get My Organizations Api V1 Organizations Mine Get
+     *
+     * Successful Response
+     */
+    200: Array<OrganizationListItem>;
+};
+
+export type GetMyOrganizationsApiV1OrganizationsMineGetResponse = GetMyOrganizationsApiV1OrganizationsMineGetResponses[keyof GetMyOrganizationsApiV1OrganizationsMineGetResponses];
+
+export type CreateOrganizationApiV1OrganizationsPostData = {
+    body: OrganizationCreateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/organizations';
+};
+
+export type CreateOrganizationApiV1OrganizationsPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateOrganizationApiV1OrganizationsPostError = CreateOrganizationApiV1OrganizationsPostErrors[keyof CreateOrganizationApiV1OrganizationsPostErrors];
+
+export type CreateOrganizationApiV1OrganizationsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: OrganizationListItem;
+};
+
+export type CreateOrganizationApiV1OrganizationsPostResponse = CreateOrganizationApiV1OrganizationsPostResponses[keyof CreateOrganizationApiV1OrganizationsPostResponses];
+
+export type SwitchOrganizationApiV1OrganizationsSwitchPostData = {
+    body: OrganizationSwitchRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/organizations/switch';
+};
+
+export type SwitchOrganizationApiV1OrganizationsSwitchPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SwitchOrganizationApiV1OrganizationsSwitchPostError = SwitchOrganizationApiV1OrganizationsSwitchPostErrors[keyof SwitchOrganizationApiV1OrganizationsSwitchPostErrors];
+
+export type SwitchOrganizationApiV1OrganizationsSwitchPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: OrganizationContextResponse;
+};
+
+export type SwitchOrganizationApiV1OrganizationsSwitchPostResponse = SwitchOrganizationApiV1OrganizationsSwitchPostResponses[keyof SwitchOrganizationApiV1OrganizationsSwitchPostResponses];
+
 export type GetTelephonyProvidersMetadataApiV1OrganizationsTelephonyProvidersMetadataGetData = {
     body?: never;
     headers?: {
@@ -11909,6 +12841,135 @@ export type GetModelConfigurationPricingApiV1OrganizationsModelConfigurationsV2P
 };
 
 export type GetModelConfigurationPricingApiV1OrganizationsModelConfigurationsV2PricingGetResponse = GetModelConfigurationPricingApiV1OrganizationsModelConfigurationsV2PricingGetResponses[keyof GetModelConfigurationPricingApiV1OrganizationsModelConfigurationsV2PricingGetResponses];
+
+export type ListProviderKeysApiV1OrganizationsProviderKeysGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Service
+         */
+        service?: string | null;
+    };
+    url: '/api/v1/organizations/provider-keys';
+};
+
+export type ListProviderKeysApiV1OrganizationsProviderKeysGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListProviderKeysApiV1OrganizationsProviderKeysGetError = ListProviderKeysApiV1OrganizationsProviderKeysGetErrors[keyof ListProviderKeysApiV1OrganizationsProviderKeysGetErrors];
+
+export type ListProviderKeysApiV1OrganizationsProviderKeysGetResponses = {
+    /**
+     * Response List Provider Keys Api V1 Organizations Provider Keys Get
+     *
+     * Successful Response
+     */
+    200: Array<ProviderKeyResponse>;
+};
+
+export type ListProviderKeysApiV1OrganizationsProviderKeysGetResponse = ListProviderKeysApiV1OrganizationsProviderKeysGetResponses[keyof ListProviderKeysApiV1OrganizationsProviderKeysGetResponses];
+
+export type CreateProviderKeyApiV1OrganizationsProviderKeysPostData = {
+    body: ProviderKeyCreateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/organizations/provider-keys';
+};
+
+export type CreateProviderKeyApiV1OrganizationsProviderKeysPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateProviderKeyApiV1OrganizationsProviderKeysPostError = CreateProviderKeyApiV1OrganizationsProviderKeysPostErrors[keyof CreateProviderKeyApiV1OrganizationsProviderKeysPostErrors];
+
+export type CreateProviderKeyApiV1OrganizationsProviderKeysPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProviderKeyResponse;
+};
+
+export type CreateProviderKeyApiV1OrganizationsProviderKeysPostResponse = CreateProviderKeyApiV1OrganizationsProviderKeysPostResponses[keyof CreateProviderKeyApiV1OrganizationsProviderKeysPostResponses];
+
+export type DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Key Id
+         */
+        key_id: number;
+    };
+    query?: never;
+    url: '/api/v1/organizations/provider-keys/{key_id}';
+};
+
+export type DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteError = DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteErrors[keyof DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteErrors];
+
+export type DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteResponse = DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteResponses[keyof DeleteProviderKeyApiV1OrganizationsProviderKeysKeyIdDeleteResponses];
 
 export type PreviewModelConfigurationV2MigrationApiV1OrganizationsModelConfigurationsV2MigrationPreviewGetData = {
     body?: never;
@@ -15474,6 +16535,1120 @@ export type GetNodeTypeApiV1NodeTypesNameGetResponses = {
 };
 
 export type GetNodeTypeApiV1NodeTypesNameGetResponse = GetNodeTypeApiV1NodeTypesNameGetResponses[keyof GetNodeTypeApiV1NodeTypesNameGetResponses];
+
+export type ListAgencyClientsApiV1AgencyClientsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/clients';
+};
+
+export type ListAgencyClientsApiV1AgencyClientsGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListAgencyClientsApiV1AgencyClientsGetError = ListAgencyClientsApiV1AgencyClientsGetErrors[keyof ListAgencyClientsApiV1AgencyClientsGetErrors];
+
+export type ListAgencyClientsApiV1AgencyClientsGetResponses = {
+    /**
+     * Response List Agency Clients Api V1 Agency Clients Get
+     *
+     * Successful Response
+     */
+    200: Array<AgencyClientSummary>;
+};
+
+export type ListAgencyClientsApiV1AgencyClientsGetResponse = ListAgencyClientsApiV1AgencyClientsGetResponses[keyof ListAgencyClientsApiV1AgencyClientsGetResponses];
+
+export type CreateAgencyClientApiV1AgencyClientsPostData = {
+    body: OrganizationCreateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/clients';
+};
+
+export type CreateAgencyClientApiV1AgencyClientsPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateAgencyClientApiV1AgencyClientsPostError = CreateAgencyClientApiV1AgencyClientsPostErrors[keyof CreateAgencyClientApiV1AgencyClientsPostErrors];
+
+export type CreateAgencyClientApiV1AgencyClientsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: OrganizationListItem;
+};
+
+export type CreateAgencyClientApiV1AgencyClientsPostResponse = CreateAgencyClientApiV1AgencyClientsPostResponses[keyof CreateAgencyClientApiV1AgencyClientsPostResponses];
+
+export type GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/clients/{organization_id}/delete-impact';
+};
+
+export type GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetError = GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetErrors[keyof GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetErrors];
+
+export type GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgencyClientDeleteImpact;
+};
+
+export type GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetResponse = GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetResponses[keyof GetAgencyClientDeleteImpactApiV1AgencyClientsOrganizationIdDeleteImpactGetResponses];
+
+export type DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/clients/{organization_id}';
+};
+
+export type DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteError = DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteErrors[keyof DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteErrors];
+
+export type DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteResponse = DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteResponses[keyof DeleteAgencyClientApiV1AgencyClientsOrganizationIdDeleteResponses];
+
+export type GetAgencyClientApiV1AgencyClientsOrganizationIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/clients/{organization_id}';
+};
+
+export type GetAgencyClientApiV1AgencyClientsOrganizationIdGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetAgencyClientApiV1AgencyClientsOrganizationIdGetError = GetAgencyClientApiV1AgencyClientsOrganizationIdGetErrors[keyof GetAgencyClientApiV1AgencyClientsOrganizationIdGetErrors];
+
+export type GetAgencyClientApiV1AgencyClientsOrganizationIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgencyClientSummary;
+};
+
+export type GetAgencyClientApiV1AgencyClientsOrganizationIdGetResponse = GetAgencyClientApiV1AgencyClientsOrganizationIdGetResponses[keyof GetAgencyClientApiV1AgencyClientsOrganizationIdGetResponses];
+
+export type RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchData = {
+    body: AgencyClientRenameRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/clients/{organization_id}';
+};
+
+export type RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchError = RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchErrors[keyof RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchErrors];
+
+export type RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: OrganizationListItem;
+};
+
+export type RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchResponse = RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchResponses[keyof RenameAgencyClientApiV1AgencyClientsOrganizationIdPatchResponses];
+
+export type ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/clients/{organization_id}/archive';
+};
+
+export type ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostError = ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostErrors[keyof ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostErrors];
+
+export type ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostResponse = ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostResponses[keyof ArchiveAgencyClientApiV1AgencyClientsOrganizationIdArchivePostResponses];
+
+export type UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/clients/{organization_id}/unarchive';
+};
+
+export type UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostError = UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostErrors[keyof UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostErrors];
+
+export type UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostResponse = UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostResponses[keyof UnarchiveAgencyClientApiV1AgencyClientsOrganizationIdUnarchivePostResponses];
+
+export type CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostData = {
+    body: DeletionRequestCreateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/clients/{organization_id}/deletion-request';
+};
+
+export type CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostError = CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostErrors[keyof CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostErrors];
+
+export type CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DeletionRequestSummary;
+};
+
+export type CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostResponse = CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostResponses[keyof CreateDeletionRequestApiV1AgencyClientsOrganizationIdDeletionRequestPostResponses];
+
+export type ListDeletionRequestsApiV1AgencyDeletionRequestsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/deletion-requests';
+};
+
+export type ListDeletionRequestsApiV1AgencyDeletionRequestsGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListDeletionRequestsApiV1AgencyDeletionRequestsGetError = ListDeletionRequestsApiV1AgencyDeletionRequestsGetErrors[keyof ListDeletionRequestsApiV1AgencyDeletionRequestsGetErrors];
+
+export type ListDeletionRequestsApiV1AgencyDeletionRequestsGetResponses = {
+    /**
+     * Response List Deletion Requests Api V1 Agency Deletion Requests Get
+     *
+     * Successful Response
+     */
+    200: Array<DeletionRequestSummary>;
+};
+
+export type ListDeletionRequestsApiV1AgencyDeletionRequestsGetResponse = ListDeletionRequestsApiV1AgencyDeletionRequestsGetResponses[keyof ListDeletionRequestsApiV1AgencyDeletionRequestsGetResponses];
+
+export type ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Request Id
+         */
+        request_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/deletion-requests/{request_id}/approve';
+};
+
+export type ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostError = ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostErrors[keyof ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostErrors];
+
+export type ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeletionRequestSummary;
+};
+
+export type ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostResponse = ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostResponses[keyof ApproveDeletionRequestApiV1AgencyDeletionRequestsRequestIdApprovePostResponses];
+
+export type RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Request Id
+         */
+        request_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/deletion-requests/{request_id}/reject';
+};
+
+export type RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostError = RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostErrors[keyof RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostErrors];
+
+export type RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeletionRequestSummary;
+};
+
+export type RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostResponse = RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostResponses[keyof RejectDeletionRequestApiV1AgencyDeletionRequestsRequestIdRejectPostResponses];
+
+export type ListTrashedClientsApiV1AgencyTrashGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/trash';
+};
+
+export type ListTrashedClientsApiV1AgencyTrashGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListTrashedClientsApiV1AgencyTrashGetError = ListTrashedClientsApiV1AgencyTrashGetErrors[keyof ListTrashedClientsApiV1AgencyTrashGetErrors];
+
+export type ListTrashedClientsApiV1AgencyTrashGetResponses = {
+    /**
+     * Response List Trashed Clients Api V1 Agency Trash Get
+     *
+     * Successful Response
+     */
+    200: Array<TrashedClientSummary>;
+};
+
+export type ListTrashedClientsApiV1AgencyTrashGetResponse = ListTrashedClientsApiV1AgencyTrashGetResponses[keyof ListTrashedClientsApiV1AgencyTrashGetResponses];
+
+export type RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/trash/{organization_id}/restore';
+};
+
+export type RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostError = RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostErrors[keyof RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostErrors];
+
+export type RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostResponse = RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostResponses[keyof RestoreTrashedClientApiV1AgencyTrashOrganizationIdRestorePostResponses];
+
+export type PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/trash/{organization_id}/purge';
+};
+
+export type PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostError = PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostErrors[keyof PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostErrors];
+
+export type PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostResponse = PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostResponses[keyof PurgeTrashedClientApiV1AgencyTrashOrganizationIdPurgePostResponses];
+
+export type GetAgencyRunHealthApiV1AgencyHealthGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/health';
+};
+
+export type GetAgencyRunHealthApiV1AgencyHealthGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetAgencyRunHealthApiV1AgencyHealthGetError = GetAgencyRunHealthApiV1AgencyHealthGetErrors[keyof GetAgencyRunHealthApiV1AgencyHealthGetErrors];
+
+export type GetAgencyRunHealthApiV1AgencyHealthGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RunHealthResponse;
+};
+
+export type GetAgencyRunHealthApiV1AgencyHealthGetResponse = GetAgencyRunHealthApiV1AgencyHealthGetResponses[keyof GetAgencyRunHealthApiV1AgencyHealthGetResponses];
+
+export type AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Alert Id
+         */
+        alert_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/failure-alerts/{alert_id}/acknowledge';
+};
+
+export type AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostError = AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostErrors[keyof AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostErrors];
+
+export type AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostResponse = AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostResponses[keyof AcknowledgeFailureAlertApiV1AgencyFailureAlertsAlertIdAcknowledgePostResponses];
+
+export type ListCreditBalancesApiV1AgencyCreditsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/credits';
+};
+
+export type ListCreditBalancesApiV1AgencyCreditsGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListCreditBalancesApiV1AgencyCreditsGetError = ListCreditBalancesApiV1AgencyCreditsGetErrors[keyof ListCreditBalancesApiV1AgencyCreditsGetErrors];
+
+export type ListCreditBalancesApiV1AgencyCreditsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CreditBalancesResponse;
+};
+
+export type ListCreditBalancesApiV1AgencyCreditsGetResponse = ListCreditBalancesApiV1AgencyCreditsGetResponses[keyof ListCreditBalancesApiV1AgencyCreditsGetResponses];
+
+export type TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostData = {
+    body: CreditTopUpRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Organization Id
+         */
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/credits/{organization_id}/top-up';
+};
+
+export type TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostError = TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostErrors[keyof TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostErrors];
+
+export type TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: CreditBalanceEntry;
+};
+
+export type TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostResponse = TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostResponses[keyof TopUpCreditsApiV1AgencyCreditsOrganizationIdTopUpPostResponses];
+
+export type ListAuditLogApiV1AgencyAuditLogGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/agency/audit-log';
+};
+
+export type ListAuditLogApiV1AgencyAuditLogGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListAuditLogApiV1AgencyAuditLogGetError = ListAuditLogApiV1AgencyAuditLogGetErrors[keyof ListAuditLogApiV1AgencyAuditLogGetErrors];
+
+export type ListAuditLogApiV1AgencyAuditLogGetResponses = {
+    /**
+     * Response List Audit Log Api V1 Agency Audit Log Get
+     *
+     * Successful Response
+     */
+    200: Array<AuditLogEntry>;
+};
+
+export type ListAuditLogApiV1AgencyAuditLogGetResponse = ListAuditLogApiV1AgencyAuditLogGetResponses[keyof ListAuditLogApiV1AgencyAuditLogGetResponses];
+
+export type ListStaffApiV1AgencyStaffGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/staff';
+};
+
+export type ListStaffApiV1AgencyStaffGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListStaffApiV1AgencyStaffGetError = ListStaffApiV1AgencyStaffGetErrors[keyof ListStaffApiV1AgencyStaffGetErrors];
+
+export type ListStaffApiV1AgencyStaffGetResponses = {
+    /**
+     * Response List Staff Api V1 Agency Staff Get
+     *
+     * Successful Response
+     */
+    200: Array<StaffAccountSummary>;
+};
+
+export type ListStaffApiV1AgencyStaffGetResponse = ListStaffApiV1AgencyStaffGetResponses[keyof ListStaffApiV1AgencyStaffGetResponses];
+
+export type CreateStaffAccountApiV1AgencyStaffPostData = {
+    body: StaffCreateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/agency/staff';
+};
+
+export type CreateStaffAccountApiV1AgencyStaffPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateStaffAccountApiV1AgencyStaffPostError = CreateStaffAccountApiV1AgencyStaffPostErrors[keyof CreateStaffAccountApiV1AgencyStaffPostErrors];
+
+export type CreateStaffAccountApiV1AgencyStaffPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: StaffAccountSummary;
+};
+
+export type CreateStaffAccountApiV1AgencyStaffPostResponse = CreateStaffAccountApiV1AgencyStaffPostResponses[keyof CreateStaffAccountApiV1AgencyStaffPostResponses];
+
+export type SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchData = {
+    body: StaffSuspendRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Staff User Id
+         */
+        staff_user_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/staff/{staff_user_id}/suspended';
+};
+
+export type SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchError = SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchErrors[keyof SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchErrors];
+
+export type SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: StaffAccountSummary;
+};
+
+export type SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchResponse = SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchResponses[keyof SetStaffSuspendedApiV1AgencyStaffStaffUserIdSuspendedPatchResponses];
+
+export type ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostData = {
+    body: StaffPasswordResetRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Staff User Id
+         */
+        staff_user_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/staff/{staff_user_id}/reset-password';
+};
+
+export type ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostError = ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostErrors[keyof ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostErrors];
+
+export type ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostResponse = ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostResponses[keyof ResetStaffPasswordApiV1AgencyStaffStaffUserIdResetPasswordPostResponses];
+
+export type ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutData = {
+    body: StaffAssignmentsRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Staff User Id
+         */
+        staff_user_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/staff/{staff_user_id}/assignments';
+};
+
+export type ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutError = ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutErrors[keyof ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutErrors];
+
+export type ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: StaffAccountSummary;
+};
+
+export type ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutResponse = ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutResponses[keyof ReplaceStaffAssignmentsApiV1AgencyStaffStaffUserIdAssignmentsPutResponses];
+
+export type DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Staff User Id
+         */
+        staff_user_id: number;
+    };
+    query?: never;
+    url: '/api/v1/agency/staff/{staff_user_id}';
+};
+
+export type DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteError = DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteErrors[keyof DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteErrors];
+
+export type DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteResponse = DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteResponses[keyof DeleteStaffAccountApiV1AgencyStaffStaffUserIdDeleteResponses];
 
 export type HealthApiV1HealthGetData = {
     body?: never;

@@ -70,6 +70,22 @@ class UserModel(Base):
     is_superuser = Column(Boolean, default=False)
     email = Column(String, nullable=True)
     password_hash = Column(String, nullable=True)
+    # Agency-level role: 'owner' sees and can enter every business on the
+    # instance; 'staff' sees only businesses assigned in
+    # staff_client_assignments. It rides on the user -- not the organization
+    # membership -- because it answers "what is this account", not "what can
+    # it do inside one business". Owners are promoted from OWNER_EMAILS at
+    # auth time and never demoted automatically; see agency_access.py.
+    agency_role = Column(
+        String(16), nullable=False, default="staff", server_default=text("'staff'")
+    )
+    # Offboarding primitive for staff. Checked on every auth path (login,
+    # token auth, API-key auth), so suspension kills access immediately --
+    # unlike assignment revocation, which existing JWTs would ride out.
+    # Suspended accounts keep their agent history and can be reactivated.
+    is_suspended = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
 
     __table_args__ = (
         Index(
@@ -78,6 +94,266 @@ class UserModel(Base):
             unique=True,
             postgresql_where=text("email IS NOT NULL"),
         ),
+    )
+
+
+class StaffClientAssignmentModel(Base):
+    """One staff member's assignment to one client business.
+
+    Agency-wide and many-to-many: a staff member may cover several clients and
+    a client may be covered by several staff members. This is NOT the
+    `organization_users` membership -- membership means "can stand inside this
+    business"; assignment means "this staff account is allowed to work on this
+    client from the agency surface". Owners never need a row here: ownership
+    covers every business by definition.
+    """
+
+    __tablename__ = "staff_client_assignments"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "organization_id", name="uq_staff_client_assignments_user_org"
+        ),
+        Index("ix_staff_client_assignments_user", "user_id"),
+        Index("ix_staff_client_assignments_org", "organization_id"),
+    )
+
+
+class ProviderKeyVaultModel(Base):
+    """One saved API key in an organization's vault.
+
+    The vault exists so the Models page and the workflow Override dialog can
+    pick a stored key (by alias) instead of retyping it every time. Keys are
+    encrypted by the service layer before they reach this table and are never
+    returned to any client after saving -- list responses carry only a masked
+    preview. A configuration that references a saved key does so by
+    `vault:{id}`, resolved against the caller's organization at save time, so
+    a cross-tenant reference is impossible by construction.
+    """
+
+    __tablename__ = "provider_key_vault"
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # llm | tts | stt | embeddings | realtime -- the service the key belongs to.
+    service = Column(String(32), nullable=False)
+    # The provider slug as the model-config schemas name it (e.g. "openai").
+    provider = Column(String(64), nullable=False)
+    alias = Column(String(100), nullable=False)
+    encrypted_key = Column(Text, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "service",
+            "provider",
+            "alias",
+            name="uq_provider_key_vault_org_service_provider_alias",
+        ),
+        Index("ix_provider_key_vault_org", "organization_id"),
+    )
+
+
+class CreditBalanceModel(Base):
+    """One organization's credit balance. 1 credit = 1 minute of successful
+    run time; plans and top-ups are grants into this balance, failed runs
+    never deduct."""
+
+    __tablename__ = "credit_balances"
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    balance_minutes = Column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+
+class CreditTransactionModel(Base):
+    """One credit movement (grant, top-up, or per-run deduction) with the
+    balance it produced, so the full history is reconstructible."""
+
+    __tablename__ = "credit_transactions"
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    delta_minutes = Column(Integer, nullable=False)
+    balance_after = Column(Integer, nullable=False)
+    # grant | top_up | run_deduction
+    reason = Column(String(64), nullable=False)
+    run_id = Column(Integer, nullable=True)
+    created_by = Column(Integer, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+
+class RunFailureAlertModel(Base):
+    """An open failed-run alert for one agent (workflow) in one business.
+
+    Created on the first failed run and bumped on every subsequent one -- the
+    partial unique index on open rows IS the debounce, so a dying phone
+    number cannot spam the dashboard. A successful run sets resolved_at
+    (auto-clear); the owner acknowledging sets acknowledged_at. Either closes
+    the alert; both free the unique slot for a future alert.
+    """
+
+    __tablename__ = "run_failure_alerts"
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    workflow_id = Column(
+        Integer, ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False
+    )
+    first_failed_run_id = Column(Integer, nullable=True)
+    last_failed_run_id = Column(Integer, nullable=True)
+    failure_count = Column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
+    last_error = Column(Text, nullable=True)
+    acknowledged_at = Column(DateTime(timezone=True), nullable=True)
+    acknowledged_by = Column(Integer, nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_run_failure_alerts_open",
+            "organization_id",
+            "workflow_id",
+            unique=True,
+            postgresql_where=text(
+                "resolved_at IS NULL AND acknowledged_at IS NULL"
+            ),
+        ),
+        Index("ix_run_failure_alerts_org", "organization_id"),
+    )
+
+
+class AuditLogModel(Base):
+    """One append-only agency audit entry: who did what, to which business.
+
+    Written best-effort by the Creative surface for every destructive or
+    management action. No update or delete paths exist -- rows are history.
+    actor_user_id / organization_id are SET NULL on account deletion or
+    business purge so the record of what happened outlives the things it
+    talks about; actor_email and the business label ride in `detail` for
+    readability.
+    """
+
+    __tablename__ = "audit_log"
+    id = Column(Integer, primary_key=True, index=True)
+    action = Column(String(64), nullable=False)
+    actor_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    actor_email = Column(String, nullable=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    detail = Column(
+        JSON, nullable=False, default=dict, server_default=text("'{}'::json")
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+    __table_args__ = (Index("ix_audit_log_created", "created_at"),)
+
+
+class DeletionRequestModel(Base):
+    """A staff member's request to delete a client business, pending the owner.
+
+    Staff deletes do not destroy anything: they create a row here, the Clients
+    page shows the business with a "deletion pending" badge, and only the
+    owner's approval performs the (still impact-guarded) delete. `status`
+    tracks the owner's decision so a rejected request cannot be silently
+    re-asked into existence -- a new request after a rejection is a new,
+    visible decision.
+
+    `organization_id` CASCADEs (a business gone by any means takes its
+    requests with it); `requested_by` is SET NULL so deleting the requester's
+    account does not destroy the audit trail of what they asked for.
+    """
+
+    __tablename__ = "deletion_requests"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    requested_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    status = Column(
+        String(16), nullable=False, default=PENDING, server_default=text("'pending'")
+    )
+    reason = Column(Text, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    resolved_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_deletion_requests_org", "organization_id"),
+        Index("ix_deletion_requests_status", "status"),
     )
 
 
@@ -107,6 +383,37 @@ class OrganizationModel(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     provider_id = Column(String, unique=True, index=True, nullable=False)
+    # Human-facing client label, e.g. "Acme Corp". Nullable on purpose: the column
+    # post-dates every org created before the backfill, and provider_id remains the
+    # only identifier some call paths (Stack auth) have. Callers fall back to it.
+    name = Column(String, nullable=True)
+    # Archive = "out of the way", not "gone". An archived business keeps every
+    # agent, call, and recording and comes back intact on unarchive; it is only
+    # hidden from the org switcher and from the agency's Clients list.
+    #
+    # Archive is the safe default action for retiring a client precisely because
+    # the foreign keys into organizations.id are inconsistent: keys, model
+    # configurations, telephony configs, phone numbers, and call records CASCADE
+    # and are destroyed silently, while workflows, folders, campaigns, and the
+    # membership table carry no ondelete at all and either raise or are orphaned.
+    # server_default is required, unlike the `name` backfill which deliberately
+    # used one instead. `name` was nullable so omitting it was meaningful; here
+    # every row must read as false, and a column added NOT NULL without a default
+    # fails outright against existing rows. It also keeps a raw INSERT that omits
+    # the column landing as "not archived", which is the correct default.
+    archived = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    # Recovery trash (soft delete). Set when the owner deletes (or approves a
+    # staff deletion request); every default lookup filters it out, so a
+    # trashed business is invisible everywhere while remaining fully
+    # restorable for the retention window. The nightly purge hard-deletes
+    # expired rows that pass the impact guard and simply leaves rows with
+    # history trashed forever -- nothing is destroyed on a timer.
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     # Deprecated: MPS owns quota and credit ledger state.

@@ -4,6 +4,11 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   output: 'standalone',
+  // Overridable so a dev server can be pointed at its own build directory. Two dev
+  // servers sharing one `distDir` corrupt each other's manifests -- each rewrites
+  // `app-build-manifest.json` on its own schedule, so pages start returning 500
+  // ENOENT under the *other* server's writes. Unset, this is Next's own default.
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   experimental: {
     serverSourceMaps: true,
   },

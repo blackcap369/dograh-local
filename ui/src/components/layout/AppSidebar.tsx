@@ -16,9 +16,11 @@ import {
   type LucideIcon,
   Megaphone,
   Phone,
+  Plus,
   Settings,
   TrendingUp,
   UserRound,
+  Users,
   Workflow,
   Wrench,
 } from "lucide-react";
@@ -55,10 +57,13 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAppConfig } from "@/context/AppConfigContext";
 import { useLeadForms } from "@/context/LeadFormsContext";
+import { useMode } from "@/context/ModeContext";
 import { useTelephonyConfigWarnings } from "@/context/TelephonyConfigWarningsContext";
 import { useLatestReleaseVersion } from "@/hooks/useLatestReleaseVersion";
+import { isAgencyOwner } from "@/lib/agency";
 import type { LocalUser } from "@/lib/auth";
 import { useAuth } from "@/lib/auth";
+import { IS_WHITELABEL } from "@/lib/branding";
 import { cn } from "@/lib/utils";
 
 type SidebarNavItem = {
@@ -66,6 +71,14 @@ type SidebarNavItem = {
   url: string;
   icon: LucideIcon;
   showsTelephonyWarning?: boolean;
+  // Hidden for every provider except `local`. The org-creation endpoint answers 404
+  // under any other provider (it is a local-auth-only path), so a nav entry that is
+  // still visible there would lead to a form that can only ever fail.
+  localOnly?: boolean;
+  // Hidden unless the account holds the agency owner role. Everything it
+  // gates is enforced server-side too; this only keeps dead links out of the
+  // sidebar for staff.
+  ownerOnly?: boolean;
 };
 
 type SidebarNavSection = {
@@ -148,7 +161,53 @@ const NAV_SECTIONS: SidebarNavSection[] = [
         title: "Reports",
         url: "/reports",
         icon: FileText,
+      },
+      {
+        // A dedicated entry as well as the sidebar switcher's own button. That
+        // switcher is hidden on the auth screens, on a collapsed desktop rail, and
+        // wherever the provider gate in this file excludes it -- so without this
+        // entry the only way to onboard a client would be to already be logged in
+        // and looking at the right screen.
+        title: "New Business",
+        url: "/organizations/new",
+        icon: Plus,
+        localOnly: true,
       }
+    ],
+  },
+];
+
+// Creative Mode is the agency operator's cross-organization surface: every
+// client business at once, no selected organization underneath it. The BUILD
+// and MANAGE groups belong to Organization Mode and are replaced wholesale
+// here rather than filtered item by item, so the two navigations can drift
+// without ever showing a half-and-half sidebar.
+const CREATIVE_NAV_SECTIONS: SidebarNavSection[] = [
+  {
+    items: [
+      {
+        title: "Home",
+        url: "/creative/dashboard",
+        icon: Home,
+      },
+    ],
+  },
+  {
+    label: "MANAGE",
+    items: [
+      {
+        title: "Clients",
+        url: "/creative/clients",
+        icon: UserRound,
+        localOnly: true,
+      },
+      {
+        title: "Team",
+        url: "/creative/team",
+        icon: Users,
+        localOnly: true,
+        ownerOnly: true,
+      },
     ],
   },
 ];
@@ -160,6 +219,7 @@ export function AppSidebar() {
   const { provider, logout, user } = useAuth();
   const { config } = useAppConfig();
   const { openHireExpert } = useLeadForms();
+  const { mode } = useMode();
   const {
     telnyxMissingWebhookPublicKeyCount,
     vonageMissingSignatureSecretCount,
@@ -169,13 +229,21 @@ export function AppSidebar() {
     vonageMissingSignatureSecretCount > 0;
   const isCollapsed = !isMobile && state === "collapsed";
 
+  // Creative Mode is the operator managing the agency; the org switcher is an
+  // Organization Mode control -- there is no "selected business" to show while
+  // looking across all of them.
+  const sections = mode === "creative" ? CREATIVE_NAV_SECTIONS : NAV_SECTIONS;
+  const showOrgSwitcher = mode === "organization";
+
   // Version info from app config context
   const versionInfo = config ? { ui: config.uiVersion, api: config.apiVersion } : null;
 
   // Check for updates only on self-hosted (OSS) deployments — cloud is managed for the user.
+  // Hidden entirely under white-label: the release nag links to upstream docs.
+  const showReleaseBadge = !IS_WHITELABEL;
   const { latest: latestRelease, isBehind, isLatest } = useLatestReleaseVersion(
     versionInfo?.ui,
-    { enabled: config?.deploymentMode === "oss" },
+    { enabled: config?.deploymentMode === "oss" && showReleaseBadge },
   );
 
   const isActive = (path: string) => pathname.startsWith(path);
@@ -290,32 +358,35 @@ export function AppSidebar() {
 
   // "Hire an Expert" CTA, rendered INSIDE the shared footer pill next to the
   // profile icon. Expanded: label pill filling the row. Collapsed: icon-only.
-  const hireExpertButton = isCollapsed ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          size="icon"
-          className="h-7 w-7 rounded-full"
-          onClick={() => openHireExpert("sidebar")}
-          aria-label="Hire an Expert"
-        >
-          <UserRound className="h-3.5 w-3.5" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="right">
-        <p>Hire an Expert</p>
-      </TooltipContent>
-    </Tooltip>
-  ) : (
-    <Button
-      size="sm"
-      className="h-7 gap-1.5 rounded-full px-3 text-xs"
-      onClick={() => openHireExpert("sidebar")}
-    >
-      <UserRound className="h-3.5 w-3.5" />
-      Hire an Expert
-    </Button>
-  );
+  // Suppressed under white-label -- it is a Dograh lead form, not agency UI.
+  const hireExpertButton = !IS_WHITELABEL ? (
+    isCollapsed ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="icon"
+            className="h-7 w-7 rounded-full"
+            onClick={() => openHireExpert("sidebar")}
+            aria-label="Hire an Expert"
+          >
+            <UserRound className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="right">
+          <p>Hire an Expert</p>
+        </TooltipContent>
+      </Tooltip>
+    ) : (
+      <Button
+        size="sm"
+        className="h-7 gap-1.5 rounded-full px-3 text-xs"
+        onClick={() => openHireExpert("sidebar")}
+      >
+        <UserRound className="h-3.5 w-3.5" />
+        Hire an Expert
+      </Button>
+    )
+  ) : null;
 
   return (
     <Sidebar collapsible="icon" variant="floating" className="app-sidebar-dock py-4">
@@ -378,7 +449,7 @@ export function AppSidebar() {
           </SidebarTrigger>
         </div>
 
-        {provider === "stack" && (
+        {showOrgSwitcher && (provider === "stack" || provider === "local") && (
           <div className={cn("mt-3 notranslate", isCollapsed && "hidden")} translate="no">
             <SidebarTeamSwitcher />
           </div>
@@ -386,31 +457,43 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className={cn("notranslate", isCollapsed && "px-0")} translate="no">
-        {NAV_SECTIONS.map((section, index) => (
-          <SidebarGroup
-            key={section.label ?? "overview"}
-            className={index === 0 ? "mt-2" : "mt-6"}
-          >
-            {section.label && (
-              <SidebarGroupLabel
-                className={cn(
-                  "notranslate text-xs font-semibold uppercase tracking-wider text-muted-foreground",
-                  isCollapsed && "hidden"
-                )}
-                translate="no"
-              >
-                {section.label}
-              </SidebarGroupLabel>
-            )}
-            <SidebarMenu>
-              {section.items.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarLink item={item} />
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroup>
-        ))}
+        {sections.map((section, index) => {
+          const visibleItems = section.items.filter(
+            (item) =>
+              (!item.localOnly || provider === "local") &&
+              (!item.ownerOnly || isAgencyOwner(user))
+          );
+          // A group can be emptied entirely by the provider filter above; rendering
+          // its label with nothing under it would leave a stray "MANAGE" heading.
+          if (visibleItems.length === 0) {
+            return null;
+          }
+          return (
+            <SidebarGroup
+              key={section.label ?? "overview"}
+              className={index === 0 ? "mt-2" : "mt-6"}
+            >
+              {section.label && (
+                <SidebarGroupLabel
+                  className={cn(
+                    "notranslate text-xs font-semibold uppercase tracking-wider text-muted-foreground",
+                    isCollapsed && "hidden"
+                  )}
+                  translate="no"
+                >
+                  {section.label}
+                </SidebarGroupLabel>
+              )}
+              <SidebarMenu>
+                {visibleItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarLink item={item} />
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroup>
+          );
+        })}
       </SidebarContent>
 
       <SidebarFooter

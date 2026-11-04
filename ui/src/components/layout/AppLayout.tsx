@@ -2,7 +2,7 @@
 
 import { AlertTriangle, Menu, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import posthog from "posthog-js";
 import React, { ReactNode } from "react";
 
@@ -11,9 +11,58 @@ import { SidebarInset, SidebarProvider, useSidebar } from "@/components/ui/sideb
 import { PostHogEvent } from "@/constants/posthog-events";
 import { useAppConfig } from "@/context/AppConfigContext";
 import { LeadFormsProvider } from "@/context/LeadFormsContext";
+import { ModeProvider, useMode, type WorkspaceMode } from "@/context/ModeContext";
+import { APP_NAME, IS_WHITELABEL } from "@/lib/branding";
+import { cn } from "@/lib/utils";
 
 import { AppSidebar } from "./AppSidebar";
 import { GitHubStarBadge } from "./GitHubStarBadge";
+
+function ModeSwitch() {
+  const { mode, setMode } = useMode();
+  const router = useRouter();
+
+  const select = (next: WorkspaceMode) => {
+    if (next === mode) return;
+    setMode(next);
+    // Each mode has a home: dropping the operator wherever they happened to be
+    // would mix organization pages into a creative session and vice versa.
+    router.push(next === "creative" ? "/creative/dashboard" : "/overview");
+  };
+
+  const optionClass = (active: boolean) =>
+    cn(
+      "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+      active
+        ? "bg-cta/15 text-foreground shadow-sm"
+        : "text-muted-foreground hover:text-foreground"
+    );
+
+  return (
+    <div
+      role="group"
+      aria-label="Workspace mode"
+      className="flex items-center rounded-full border border-border/60 bg-muted/30 p-0.5"
+    >
+      <button
+        type="button"
+        aria-pressed={mode === "organization"}
+        onClick={() => select("organization")}
+        className={optionClass(mode === "organization")}
+      >
+        Organization
+      </button>
+      <button
+        type="button"
+        aria-pressed={mode === "creative"}
+        onClick={() => select("creative")}
+        className={optionClass(mode === "creative")}
+      >
+        Creative
+      </button>
+    </div>
+  );
+}
 
 function AppHeader() {
   const { toggleSidebar } = useSidebar();
@@ -24,24 +73,27 @@ function AppHeader() {
         <Button variant="ghost" size="icon" onClick={toggleSidebar} aria-label="Open menu" className="md:hidden">
           <Menu className="h-5 w-5" />
         </Button>
-        <Link href="/" className="text-lg font-bold md:hidden">Dograh</Link>
+        <Link href="/" className="text-lg font-bold md:hidden">{APP_NAME}</Link>
       </div>
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" asChild>
-          <a
-            href="https://join.slack.com/t/dograh-community/shared_invite/zt-4787daqcn-3TDiQUh~3xrr3pwAqR9wpQ"
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => posthog.capture(PostHogEvent.SLACK_COMMUNITY_CLICKED, { source: "app_header" })}
-            className="flex items-center gap-2"
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm10.122 2.521a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.268 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zm-2.523 10.122a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.268a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" />
-            </svg>
-            <span className="hidden sm:inline">Join Slack</span>
-          </a>
-        </Button>
-        <GitHubStarBadge source="app_header" />
+        {!IS_WHITELABEL && (
+          <Button variant="ghost" size="sm" asChild>
+            <a
+              href="https://join.slack.com/t/dograh-community/shared_invite/zt-4787daqcn-3TDiQUh~3xrr3pwAqR9wpQ"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => posthog.capture(PostHogEvent.SLACK_COMMUNITY_CLICKED, { source: "app_header" })}
+              className="flex items-center gap-2"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm10.122 2.521a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.268 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zm-2.523 10.122a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.268a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" />
+              </svg>
+              <span className="hidden sm:inline">Join Slack</span>
+            </a>
+          </Button>
+        )}
+        {!IS_WHITELABEL && <GitHubStarBadge source="app_header" />}
+        <ModeSwitch />
       </div>
     </header>
   );
@@ -109,50 +161,54 @@ const AppLayout: React.FC<AppLayoutProps> = ({
 
   // Always render SidebarProvider to keep the component tree shape consistent
   // across route changes (avoids React hooks ordering violations during navigation).
+  // ModeProvider sits above that split so both sidebar and sidebar-less routes
+  // can read the workspace mode without the hook throwing below the gate.
   return (
     <SidebarProvider defaultOpen>
-      {shouldShowSidebar ? (
-        <LeadFormsProvider>
-          <div className="flex min-h-screen w-full">
-            <AppSidebar />
-            <SidebarInset className="flex-1">
-              <BackendStatusBanner />
-              {!isWorkflowEditor && <AppHeader />}
-              {/* Optional header area for specific pages */}
-              {headerActions && (
-                <header className="sticky top-[var(--event-banner-h,0px)] z-50 w-full border-b border-border/60 bg-background/70 backdrop-blur-md supports-[backdrop-filter]:bg-background/55">
-                  <div className="container mx-auto px-4 py-4">
-                    <div className="flex items-center justify-center">
-                      {headerActions}
+      <ModeProvider>
+        {shouldShowSidebar ? (
+          <LeadFormsProvider>
+            <div className="flex min-h-screen w-full">
+              <AppSidebar />
+              <SidebarInset className="flex-1">
+                <BackendStatusBanner />
+                {!isWorkflowEditor && <AppHeader />}
+                {/* Optional header area for specific pages */}
+                {headerActions && (
+                  <header className="sticky top-[var(--event-banner-h,0px)] z-50 w-full border-b border-border/60 bg-background/70 backdrop-blur-md supports-[backdrop-filter]:bg-background/55">
+                    <div className="container mx-auto px-4 py-4">
+                      <div className="flex items-center justify-center">
+                        {headerActions}
+                      </div>
+                    </div>
+                  </header>
+                )}
+
+                {/* Optional sticky tabs */}
+                {stickyTabs && (
+                  <div className="sticky top-[var(--event-banner-h,0px)] z-40 bg-[#2a2e39] border-b border-gray-700">
+                    <div className="container mx-auto px-4">
+                      <div className="flex items-center justify-center py-2">
+                        {stickyTabs}
+                      </div>
                     </div>
                   </div>
-                </header>
-              )}
+                )}
 
-              {/* Optional sticky tabs */}
-              {stickyTabs && (
-                <div className="sticky top-[var(--event-banner-h,0px)] z-40 bg-[#2a2e39] border-b border-gray-700">
-                  <div className="container mx-auto px-4">
-                    <div className="flex items-center justify-center py-2">
-                      {stickyTabs}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Main content area */}
-              <main className="app-surface flex-1">
-                {children}
-              </main>
-            </SidebarInset>
+                {/* Main content area */}
+                <main className="app-surface flex-1">
+                  {children}
+                </main>
+              </SidebarInset>
+            </div>
+          </LeadFormsProvider>
+        ) : (
+          <div className="app-surface w-full flex-1">
+            <BackendStatusBanner />
+            {children}
           </div>
-        </LeadFormsProvider>
-      ) : (
-        <div className="app-surface w-full flex-1">
-          <BackendStatusBanner />
-          {children}
-        </div>
-      )}
+        )}
+      </ModeProvider>
     </SidebarProvider>
   );
 };

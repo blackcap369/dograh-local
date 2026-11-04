@@ -18,6 +18,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from api.db import db_client
 from api.enums import CallType, WorkflowRunState
+from api.services.credit_billing import ensure_organization_has_credits
 from api.services.call_concurrency import (
     CallConcurrencyLimitError,
     call_concurrency,
@@ -74,6 +75,7 @@ async def agent_stream_websocket(
         "direction": "inbound",
     }
     try:
+        await ensure_organization_has_credits(workflow.organization_id)
         run_inputs = await prepare_workflow_run_inputs(db_client, workflow)
         workflow_run = await db_client.create_workflow_run(
             workflow_run_name,

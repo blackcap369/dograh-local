@@ -1,17 +1,21 @@
 from copy import deepcopy
 from typing import Any, List, Optional
+from uuid import uuid4
+
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from api.constants import (
+    AUTH_PROVIDER,
     DEFAULT_CAMPAIGN_RETRY_CONFIG,
     DEFAULT_ORG_CONCURRENCY_LIMIT,
     DEPLOYMENT_MODE,
 )
 from api.db import db_client
-from api.db.models import UserModel
+from api.db.models import OrganizationModel, UserModel
 from api.db.telephony_configuration_client import (
     TelephonyConfigurationConflictError,
     TelephonyConfigurationInUseError,
@@ -30,6 +34,11 @@ from api.schemas.ai_model_configuration import (
     DOGRAH_SPEED_STEP,
     OrganizationAIModelConfigurationResponse,
     OrganizationAIModelConfigurationV2,
+)
+from api.schemas.organization import (
+    OrganizationCreateRequest,
+    OrganizationListItem,
+    OrganizationSwitchRequest,
 )
 from api.schemas.organization_preferences import OrganizationPreferences
 from api.schemas.telephony_config import (
@@ -51,6 +60,7 @@ from api.schemas.telephony_phone_number import (
     PhoneNumberUpdateRequest,
     ProviderSyncStatus,
 )
+from api.services.agency_access import is_agency_owner
 from api.services.auth.depends import (
     get_user,
     get_user_with_selected_organization,
@@ -79,6 +89,12 @@ from api.services.configuration.registry import (
 )
 from api.services.mps_billing import ensure_hosted_mps_billing_account_v2
 from api.services.mps_service_key_client import mps_service_key_client
+from api.services.organization_bootstrap import ensure_organization_bootstrapped
+from api.services.provider_key_vault import (
+    encrypt_vault_key,
+    resolve_vault_refs_in_config,
+    vault_key_response_row,
+)
 from api.services.organization_context import (
     OrganizationContextResponse,
     get_organization_context,
@@ -224,6 +240,126 @@ class ModelConfigurationPricingResponse(BaseModel):
 @router.get("/context", response_model=OrganizationContextResponse)
 async def get_current_organization_context(user: UserModel = Depends(get_user)):
     """Return organization-scoped configuration signals owned by Dograh."""
+    return await get_organization_context(user)
+
+
+@router.get("/mine", response_model=List[OrganizationListItem])
+async def get_my_organizations(user: UserModel = Depends(get_user)):
+    """Return all organizations the user belongs to, for the switcher.
+
+    `include_archived=False` is passed explicitly rather than left to the default:
+    an archived business is retired and must not reappear in the dropdown, and a
+    test pins this call site so a future edit here cannot quietly drop the filter.
+    """
+    orgs = await db_client.get_organizations_for_user(
+        user.id, include_archived=False
+    )
+    # getattr, not attribute access: an org row written before the `name` column
+    # existed has no such attribute, and the switcher still has to list it.
+    return [
+        OrganizationListItem(
+            id=o.id, provider_id=o.provider_id, name=getattr(o, "name", None)
+        )
+        for o in orgs
+    ]
+
+
+@router.post("", response_model=OrganizationListItem, status_code=201)
+async def create_organization(
+    request: OrganizationCreateRequest,
+    user: UserModel = Depends(get_user),
+):
+    """Create a new business for the caller and make them a member of it.
+
+    This is the "New Business" button. Until it existed, the only org-creating calls
+    were signup -- which 409s on a duplicate email and keys the id 1:1 to a user -- and
+    the Stack bootstrap, which is unreachable while AUTH_PROVIDER is "local". So
+    onboarding a second client meant signing up with a second email address, producing
+    a second *user* who is not a member of the first business and cannot be added to it.
+
+    `provider_id` is minted here, never taken from the body: it is the only key
+    organizations are looked up by, so a caller-supplied value would be a
+    cross-tenant collision and impersonation primitive. The user id is embedded for
+    traceability but the random suffix is what makes it unique -- a user may hold many
+    businesses, which `org_{user.provider_id}` cannot express.
+
+    Auth uses `get_user`, not `get_user_with_selected_organization`, so a user with no
+    business yet can still create their first one.
+
+    Local auth only, mirroring /switch: under Stack the active team is owned by Stack
+    Auth and re-asserted on every request, so an org created here would never be the
+    org `get_user` resolves to. 404 rather than 403 so the route stays unadvertised in
+    deployments that cannot use it.
+    """
+    if AUTH_PROVIDER != "local":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    organization = await db_client.create_organization(
+        name=request.name,
+        provider_id=f"org_local_{user.id}_{uuid4().hex[:8]}",
+    )
+    await db_client.add_user_to_organization(user.id, organization.id)
+
+    # Deliberately no `update_user_selected_organization` here. Creating client #3
+    # while working in #1 must not move the operator: an auto-switch would silently
+    # re-point every org-scoped query the page makes next, so an agent created moments
+    # later would land in the wrong business. The dropdown gains an option instead, and
+    # the user switches deliberately.
+    return OrganizationListItem(
+        id=organization.id,
+        provider_id=organization.provider_id,
+        name=getattr(organization, "name", None),
+    )
+
+
+@router.post("/switch", response_model=OrganizationContextResponse)
+async def switch_organization(
+    request: OrganizationSwitchRequest,
+    user: UserModel = Depends(get_user),
+):
+    """Make one of the caller's own organizations the active one.
+
+    Local auth only. Under the Stack provider the active team is owned by Stack Auth
+    (`selected_team_id`), and `get_user` re-asserts that selection on every request --
+    so honoring a write here would be silently undone on the next request. The UI
+    drives Stack through Stack's own `user.setSelectedTeam` instead.
+
+    A single-column write to `users.selected_organization_id` is sufficient and needs
+    no new token: `_handle_oss_auth` re-reads the user row on every request, so the
+    new value is in force from the next call onward.
+
+    Auth uses `get_user`, not `get_user_with_selected_organization`, so a user who
+    currently has no organization selected can still select one.
+    """
+    if AUTH_PROVIDER != "local":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    organization = await db_client.get_organization_by_id(request.organization_id)
+    if not organization:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    # The id came from the request body, so it proves nothing about membership on its
+    # own. Re-derive the caller's organizations and require the target to be among
+    # them; without this the endpoint is a cross-tenant escalation primitive.
+    # The agency owner is the deliberate exception: ownership is the power to
+    # stand in any business on the instance, so membership is not consulted.
+    memberships = await db_client.get_organizations_for_user(user.id)
+    is_member = any(org.id == organization.id for org in memberships)
+    if not is_member and not is_agency_owner(user):
+        raise HTTPException(
+            status_code=403, detail="You do not have access to that organization"
+        )
+
+    await db_client.update_user_selected_organization(user.id, organization.id)
+    user.selected_organization_id = organization.id
+
+    # Provisioning is keyed on whether the target org is actually configured, not on
+    # whether this request created it, so switching into a not-yet-provisioned org
+    # self-heals the same way a retried bootstrap does.
+    await ensure_organization_bootstrapped(
+        organization.id, created_by=user.provider_id
+    )
+
     return await get_organization_context(user)
 
 
@@ -458,6 +594,20 @@ async def save_model_configuration_v2(
     user: UserModel = Depends(get_user_with_selected_organization),
 ):
     organization_id = user.selected_organization_id
+    # Resolve `vault:{id}` references from the saved-key vault first, so the
+    # rest of the save flow (secret merge, mask check, validation) sees a
+    # normal configuration. Resolution is org-scoped: a reference to another
+    # organization's key fails closed with a 422.
+    try:
+        resolved_data = await resolve_vault_refs_in_config(
+            request.model_dump(mode="json", exclude_none=True),
+            organization_id,
+            db_client,
+        )
+        request = OrganizationAIModelConfigurationV2.model_validate(resolved_data)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
     existing = await get_organization_ai_model_configuration_v2(organization_id)
     configuration = merge_ai_model_configuration_v2_secrets(request, existing)
     try:
@@ -479,6 +629,97 @@ async def save_model_configuration_v2(
         user=user,
         configuration=configuration,
     )
+
+
+class ProviderKeyCreateRequest(BaseModel):
+    """Body for saving an API key into the organization's vault."""
+
+    service: str = Field(..., max_length=32)
+    provider: str = Field(..., max_length=64)
+    alias: str = Field(..., min_length=1, max_length=100)
+    api_key: str = Field(..., min_length=1, max_length=512)
+
+    @field_validator("service")
+    @classmethod
+    def _known_service(cls, value: str) -> str:
+        allowed = {"llm", "tts", "stt", "embeddings", "realtime"}
+        if value.strip().lower() not in allowed:
+            raise ValueError(f"service must be one of: {', '.join(sorted(allowed))}")
+        return value.strip().lower()
+
+    @field_validator("provider", "alias")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be blank")
+        return value.strip()
+
+
+class ProviderKeyResponse(BaseModel):
+    """A saved key, masked. The raw key never leaves the server."""
+
+    id: int
+    service: str
+    provider: str
+    alias: str
+    masked_key: str
+    created_at: datetime | None = None
+
+
+@router.get("/provider-keys", response_model=List[ProviderKeyResponse])
+async def list_provider_keys(
+    service: Optional[str] = Query(default=None),
+    user: UserModel = Depends(get_user_with_selected_organization),
+):
+    """The organization's saved API keys, masked.
+
+    Filtering by `service` is what the configuration form's "use saved key"
+    dropdown does. Raw keys are never returned: a saved key is used by
+    reference (`vault:{id}`), resolved server-side at configuration-save
+    time.
+    """
+    rows = await db_client.list_vault_keys(
+        user.selected_organization_id, service
+    )
+    return [ProviderKeyResponse(**vault_key_response_row(row)) for row in rows]
+
+
+@router.post(
+    "/provider-keys",
+    response_model=ProviderKeyResponse,
+    status_code=201,
+)
+async def create_provider_key(
+    request: ProviderKeyCreateRequest,
+    user: UserModel = Depends(get_user_with_selected_organization),
+):
+    """Save an API key into the organization's vault, encrypted at rest."""
+    try:
+        row = await db_client.create_vault_key(
+            organization_id=user.selected_organization_id,
+            service=request.service,
+            provider=request.provider,
+            alias=request.alias,
+            encrypted_key=encrypt_vault_key(request.api_key),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return ProviderKeyResponse(**vault_key_response_row(row))
+
+
+@router.delete("/provider-keys/{key_id}", status_code=204)
+async def delete_provider_key(
+    key_id: int,
+    user: UserModel = Depends(get_user_with_selected_organization),
+):
+    """Remove a saved key. Configurations that referenced it keep the key
+    value they were saved with; only future references are affected."""
+    deleted = await db_client.delete_vault_key(
+        key_id, user.selected_organization_id
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Saved key not found")
+    return None
 
 
 @router.get("/model-configurations/v2/migration-preview")

@@ -465,8 +465,12 @@ class WorkflowClient(BaseDBClient):
                 )
             )
 
-            if organization_id:
+            if organization_id is not None:
                 query = query.where(WorkflowModel.organization_id == organization_id)
+            else:
+                # Scoping is mandatory. `if organization_id:` would treat None as
+                # "no filter" and enumerate every tenant's workflows.
+                query = query.where(WorkflowModel.organization_id.is_(None))
 
             if status:
                 query = query.where(WorkflowModel.status == status)

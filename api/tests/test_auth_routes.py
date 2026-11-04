@@ -78,4 +78,8 @@ def test_stack_mode_keeps_current_user_route_available(monkeypatch):
         "name": None,
         "organization_id": 42,
         "provider_id": "stack-user-1",
+        # agency_role is part of the local-fork's agency model; under Stack it
+        # stays at the 'staff' default because OWNER_EMAILS promotion only
+        # fires for local logins.
+        "agency_role": "staff",
     }

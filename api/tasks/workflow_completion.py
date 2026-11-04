@@ -35,6 +35,28 @@ async def process_workflow_completion(
     except Exception as e:
         logger.error(f"Error running integrations for workflow {workflow_run_id}: {e}")
 
+    # Failed-run monitoring (V2.6): bump/clear the business's failure alert.
+    # Best-effort -- monitoring must never fail the completion pipeline.
+    try:
+        from api.services.run_failure_alerts import (
+            evaluate_run_completion_for_alerts,
+        )
+
+        await evaluate_run_completion_for_alerts(workflow_run_id)
+    except Exception as e:
+        logger.error(f"Error evaluating run-failure alert for run {workflow_run_id}: {e}")
+
+    # Credit billing (V2.5 billing): deduct 1 credit per minute of
+    # successful run time. Failed runs never deduct. Best-effort.
+    try:
+        from api.services.credit_billing import (
+            apply_run_credit_deduction,
+        )
+
+        await apply_run_credit_deduction(workflow_run_id)
+    except Exception as e:
+        logger.error(f"Error deducting credits for run {workflow_run_id}: {e}")
+
     # Notify MPS after completion. MPS owns credit accounting.
     try:
         await report_completed_workflow_run_platform_usage(workflow_run_id)

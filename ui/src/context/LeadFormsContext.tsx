@@ -11,6 +11,7 @@ import { OnboardingModal } from "@/components/lead-forms/OnboardingModal";
 import { PostHogEvent } from "@/constants/posthog-events";
 import { useOnboarding } from "@/context/OnboardingContext";
 import { useAuth } from "@/lib/auth";
+import { IS_WHITELABEL } from "@/lib/branding";
 import { trackMetaCompleteRegistration } from "@/lib/metaPixel";
 
 interface LeadFormsContextValue {
@@ -125,10 +126,14 @@ export function LeadFormsProvider({ children }: { children: ReactNode }) {
         source={enterpriseSource}
         prefill={enterprisePrefill}
       />
-      <OnboardingModal
-        open={onboardingOpen}
-        onComplete={completeOnboarding}
-      />
+      {/* The onboarding modal is a Dograh lead form; whitelabel deployments
+          skip it entirely and mark it done so it never auto-opens. */}
+      {!IS_WHITELABEL && (
+        <OnboardingModal
+          open={onboardingOpen}
+          onComplete={completeOnboarding}
+        />
+      )}
     </LeadFormsContext.Provider>
   );
 }

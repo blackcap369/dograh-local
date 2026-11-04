@@ -19,6 +19,10 @@ class OrganizationModelServicesContext(BaseModel):
 class OrganizationContextResponse(BaseModel):
     organization_id: Optional[int] = None
     organization_provider_id: Optional[str] = None
+    # Human-facing label for the active business. Nullable for the same reason
+    # `organizations.name` is: it post-dates the backfill, and Stack-created orgs
+    # never set it. `organization_provider_id` remains the fallback.
+    organization_name: Optional[str] = None
     model_services: OrganizationModelServicesContext
 
 
@@ -38,6 +42,9 @@ async def get_organization_context(user: UserModel) -> OrganizationContextRespon
     return OrganizationContextResponse(
         organization_id=organization_id,
         organization_provider_id=organization.provider_id if organization else None,
+        organization_name=(organization.name or organization.provider_id)
+        if organization
+        else None,
         model_services=OrganizationModelServicesContext(
             config_source=resolved.source,
             has_model_configuration_v2=resolved.source == "organization_v2",

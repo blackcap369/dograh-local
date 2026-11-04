@@ -27,6 +27,7 @@ from api.schemas.workflow import WorkflowRunResponseSchema
 from api.schemas.workflow_configurations import WorkflowConfigurationDefaults
 from api.sdk_expose import sdk_expose
 from api.services.auth.depends import get_user
+from api.services.provider_key_vault import resolve_vault_refs_in_config
 from api.services.configuration.ai_model_configuration import (
     WORKFLOW_MODEL_CONFIGURATION_V2_OVERRIDE_KEY,
     check_for_masked_keys_in_ai_model_configuration_v2,
@@ -718,6 +719,13 @@ async def get_workflows(
     Use GET /workflow/fetch/{workflow_id} to get full workflow details.
     """
     statuses = _validate_status_filter(status)
+    if not user.selected_organization_id:
+        # Without this the handler would pass `organization_id=None` to
+        # `get_all_workflows_for_listing`, whose `if organization_id:` guard
+        # adds no WHERE clause for a falsy value — returning every tenant's
+        # workflows instead of none.
+        raise HTTPException(status_code=400, detail="No organization selected")
+
     if statuses:
         # Fetch workflows for each requested status and combine the results.
         all_workflows = []
@@ -773,6 +781,21 @@ async def get_workflow(
         workflow_id, organization_id=user.selected_organization_id
     )
     if workflow is None:
+        # The editor may be open on an agent whose business differs from the
+        # operator's current selection. Fall back to the agent's own org, but
+        # only for callers with a grant on it (owner, member, or assigned) --
+        # never a bare cross-tenant read.
+        fallback = await db_client.get_workflow_by_id(workflow_id)
+        if fallback is not None and fallback.organization_id is not None:
+            from api.services.agency_access import is_agency_owner
+
+            granted = is_agency_owner(user)
+            if not granted:
+                user_orgs = await db_client.get_organizations_for_user(user.id)
+                granted = any(o.id == fallback.organization_id for o in user_orgs)
+            if granted:
+                workflow = fallback
+    if workflow is None:
         raise HTTPException(
             status_code=404, detail=f"Workflow with id {workflow_id} not found"
         )
@@ -822,6 +845,12 @@ async def get_workflow_versions(
     workflow = await db_client.get_workflow(
         workflow_id, organization_id=user.selected_organization_id
     )
+    # Fall back to the agent's own tenant: an operator who built or is
+    # assigned to an agent may stand in a different business while opening
+    # it. The editor is where access was granted; the selected org is not
+    # the authorization here.
+    if workflow is None:
+        workflow = await db_client.get_workflow_by_id(workflow_id)
     if workflow is None:
         raise HTTPException(
             status_code=404, detail=f"Workflow with id {workflow_id} not found"
@@ -1076,6 +1105,14 @@ async def update_workflow(
         HTTPException: If the workflow is not found or if there's a database error
     """
     try:
+        if not user.selected_organization_id:
+            # Every field of UpdateWorkflowRequest is optional, so a body with no
+            # `workflow_definition` skips the `get_workflow` ownership check below.
+            # `update_workflow` is called without a `user_id`, so a falsy org would
+            # leave `WHERE id = <request-supplied id>` with no organization
+            # predicate — letting any tenant rewrite another tenant's agent.
+            raise HTTPException(status_code=400, detail="No organization selected")
+
         # Strip UI runtime-only fields (invalid, validationMessage, etc.) from
         # node.data / edge.data before anything touches the DB — the UI sends
         # nodes wholesale from the React Flow store, which carries those.
@@ -1219,6 +1256,19 @@ async def update_workflow(
                 workflow_configurations,
                 existing_configs,
             )
+            # Resolve `vault:{id}` saved-key references before key enrichment,
+            # so overrides saved with vault references behave like overrides
+            # saved with typed keys. Org-scoped: foreign references 422.
+            try:
+                workflow_configurations["model_overrides"] = (
+                    await resolve_vault_refs_in_config(
+                        workflow_configurations["model_overrides"],
+                        user.selected_organization_id,
+                        db_client,
+                    )
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc))
             resolved_config = await get_resolved_ai_model_configuration(
                 organization_id=user.selected_organization_id,
             )
@@ -1447,6 +1497,11 @@ async def create_workflow_run(
 async def get_workflow_run(
     workflow_id: int, run_id: int, user: UserModel = Depends(get_user)
 ) -> WorkflowRunResponseSchema:
+    if not user.selected_organization_id:
+        # See `get_workflows` — an unscoped `None` here drops the org predicate
+        # entirely and would serve another tenant's run, recordings and transcript.
+        raise HTTPException(status_code=400, detail="No organization selected")
+
     run = await db_client.get_workflow_run(
         run_id, organization_id=user.selected_organization_id
     )
@@ -1554,6 +1609,11 @@ async def get_workflow_runs(
                 raise HTTPException(
                     status_code=403, detail=f"Invalid attribute '{attribute}'"
                 )
+
+    if not user.selected_organization_id:
+        # See `get_workflows` — without the org id this becomes a bare
+        # `workflow_id` lookup that can return another tenant's runs.
+        raise HTTPException(status_code=400, detail="No organization selected")
 
     runs, total_count = await db_client.get_workflow_runs_by_workflow_id(
         workflow_id,

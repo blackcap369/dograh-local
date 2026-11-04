@@ -1,10 +1,11 @@
 "use client";
 
-import { ExternalLink, Plus, X } from "lucide-react";
+import { ExternalLink, KeyRound, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 
-import { getDefaultConfigurationsApiV1UserConfigurationsDefaultsGet } from '@/client/sdk.gen';
+import { getDefaultConfigurationsApiV1UserConfigurationsDefaultsGet, listProviderKeysApiV1OrganizationsProviderKeysGet } from '@/client/sdk.gen';
+import type { ProviderKeyResponse } from '@/client/types.gen';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -178,6 +179,10 @@ export function ServiceConfigurationForm({
         embeddings: "",
         realtime: "",
     });
+    // The organization's saved keys (V2.5): stored encrypted server-side and
+    // referenced from a configuration by `vault:{id}`, resolved at save time.
+    // The raw key never reaches the browser.
+    const [savedKeys, setSavedKeys] = useState<ProviderKeyResponse[]>([]);
     const [apiKeys, setApiKeys] = useState<Record<ServiceSegment, string[]>>({
         llm: [""],
         tts: [""],
@@ -225,6 +230,17 @@ export function ServiceConfigurationForm({
         }
         return merged as typeof userConfig;
     }, [mode, userConfig, currentOverrides, initialConfig]);
+
+    useEffect(() => {
+        listProviderKeysApiV1OrganizationsProviderKeysGet()
+            .then((response) => {
+                if (!response.error) setSavedKeys(response.data ?? []);
+            })
+            .catch(() => {
+                // The vault is an enhancement; a failed load must never break
+                // the configuration form. Manual entry still works.
+            });
+    }, []);
 
     useEffect(() => {
         const fetchConfigurations = async () => {
@@ -611,18 +627,69 @@ export function ServiceConfigurationForm({
                     <div className="space-y-2">
                         <Label>{mode === 'override' ? 'API Key (leave empty to use global)' : 'API Key(s)'}</Label>
                         {renderFieldDescription("api_key", providerSchema)}
-                        {apiKeys[service].map((key, index) => (
+                        {(() => {
+                            // Saved keys for THIS service and the selected
+                            // provider, from the organization vault.
+                            const usable = savedKeys.filter(
+                                (k) => k.service === service && k.provider === currentProvider
+                            );
+                            if (usable.length === 0) return null;
+                            return (
+                                <div className="flex items-center gap-2">
+                                    <KeyRound className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                    <Select
+                                        value=""
+                                        onValueChange={(value) => {
+                                            if (!value) return;
+                                            setApiKeys(prev => ({
+                                                ...prev,
+                                                [service]: [...prev[service], `vault:${value}`],
+                                            }));
+                                        }}
+                                    >
+                                        <SelectTrigger className="h-9 flex-1">
+                                            <SelectValue placeholder="Use a saved key…" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {usable.map((k) => (
+                                                <SelectItem key={k.id} value={String(k.id)}>
+                                                    {k.alias} ({k.masked_key})
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            );
+                        })()}
+                        {apiKeys[service].map((key, index) => {
+                            // A `vault:{id}` entry is an opaque reference to a
+                            // saved key; show its alias instead of the ref.
+                            const vaultRef = key.startsWith("vault:");
+                            const vaultId = vaultRef ? Number(key.slice(6)) : null;
+                            const alias = vaultId
+                                ? savedKeys.find((k) => k.id === vaultId)?.alias
+                                : null;
+                            return (
                             <div key={index} className="flex gap-2">
-                                <Input
-                                    type="text"
-                                    placeholder="Enter API key"
-                                    value={key}
-                                    onChange={(e) => {
-                                        const newKeys = [...apiKeys[service]];
-                                        newKeys[index] = e.target.value;
-                                        setApiKeys(prev => ({ ...prev, [service]: newKeys }));
-                                    }}
-                                />
+                                {vaultRef ? (
+                                    <div className="flex h-9 flex-1 items-center gap-2 rounded-md border bg-muted/40 px-3 text-sm text-muted-foreground">
+                                        <KeyRound className="h-3.5 w-3.5 shrink-0" />
+                                        <span className="truncate">
+                                            Saved key{alias ? `: ${alias}` : ` #${vaultId}`}
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <Input
+                                        type="text"
+                                        placeholder="Enter API key"
+                                        value={key}
+                                        onChange={(e) => {
+                                            const newKeys = [...apiKeys[service]];
+                                            newKeys[index] = e.target.value;
+                                            setApiKeys(prev => ({ ...prev, [service]: newKeys }));
+                                        }}
+                                    />
+                                )}
                                 {apiKeys[service].length > 1 && (
                                     <Button
                                         type="button"
@@ -640,7 +707,8 @@ export function ServiceConfigurationForm({
                                     </Button>
                                 )}
                             </div>
-                        ))}
+                            );
+                        })}
                         {mode !== 'override' && (
                             <Button
                                 type="button"

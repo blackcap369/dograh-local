@@ -7,6 +7,7 @@ from api.constants import AUTH_PROVIDER
 from api.db import db_client
 from api.db.models import UserModel
 from api.enums import PostHogEvent
+from api.services.agency_access import is_agency_owner, promote_to_owner_if_listed
 from api.services.auth.stack_auth import stackauth
 from api.services.organization_bootstrap import ensure_organization_bootstrapped
 from api.services.posthog_client import (
@@ -62,6 +63,15 @@ async def get_user(
     if not selected_team_id and stack_user.get("selected_team"):
         selected_team_id = stack_user["selected_team"].get("id")
 
+    # Best-effort display label for the org. Absent in some Stack responses, in
+    # which case the column stays NULL and the UI falls back to the team id.
+    # Snapshot only: a later rename in Stack must not silently rewrite it here,
+    # which the ON CONFLICT path in get_or_create_organization_by_provider_id
+    # guarantees.
+    selected_team_name: str | None = (stack_user.get("selected_team") or {}).get(
+        "name"
+    )
+
     if not selected_team_id:
         raise HTTPException(status_code=400, detail="No team selected")
 
@@ -105,7 +115,9 @@ async def get_user(
             organization,
             org_was_created,
         ) = await db_client.get_or_create_organization_by_provider_id(
-            org_provider_id=selected_team_id, user_id=user_model.id
+            org_provider_id=selected_team_id,
+            user_id=user_model.id,
+            name=selected_team_name,
         )
         if org_was_created:
             _sync_created_organization_to_posthog(
@@ -251,6 +263,42 @@ async def get_user_with_selected_organization(
     return user
 
 
+def _raise_if_suspended(user: UserModel) -> None:
+    """Reject the request when the account is suspended.
+
+    Called on every auth path that produces a user (token auth, API-key auth,
+    and the login route): assignment revocation alone would let an existing
+    JWT ride out its expiry, so suspension is the check that makes an
+    offboarding decision take effect immediately.
+    """
+    if getattr(user, "is_suspended", False):
+        raise HTTPException(status_code=403, detail="This account has been suspended")
+
+
+def require_agency_owner(
+    user: Annotated[UserModel, Depends(get_user)],
+) -> UserModel:
+    """The owner-only gate for the agency surface's privileged writes.
+
+    Creating a client, and (coming with the access-management settings)
+    assigning staff and restoring from trash. Lives beside `get_user` rather
+    than in agency_access.py because it is a FastAPI dependency over get_user,
+    and agency_access must not import this module back.
+
+    Under Stack auth this raises 404 rather than 403: the active team is owned
+    by Stack Auth and re-asserted on every request, so agency state would be
+    unreachable or contradictory -- staying unadvertised keeps the surface
+    honest.
+    """
+    if AUTH_PROVIDER != "local":
+        raise HTTPException(status_code=404, detail="Not found")
+    if not is_agency_owner(user):
+        raise HTTPException(
+            status_code=403, detail="Only the agency owner can do that"
+        )
+    return user
+
+
 async def _handle_oss_auth(authorization: str | None) -> UserModel:
     """
     Handle authentication for OSS deployment mode.
@@ -278,6 +326,13 @@ async def _handle_oss_auth(authorization: str | None) -> UserModel:
         raise
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    # One-way promotion from OWNER_EMAILS: an email added to the owners list
+    # after the account exists becomes an owner on this request, and every
+    # role check downstream reads the user row -- so this is where the env
+    # and the stored role converge.
+    await promote_to_owner_if_listed(user)
+    _raise_if_suspended(user)
 
     # Deliberately outside the try above: a provisioning failure must not be
     # reported to the user as an expired token.
@@ -312,6 +367,8 @@ async def _handle_api_key_auth(api_key: str) -> UserModel:
 
     # Set the organization context to the API key's organization
     user.selected_organization_id = api_key_model.organization_id
+
+    _raise_if_suspended(user)
 
     logger.debug(
         f"Authenticated via API key: {api_key_model.key_prefix}... "

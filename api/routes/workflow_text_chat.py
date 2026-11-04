@@ -107,10 +107,11 @@ async def _ensure_text_chat_quota(
     user: UserModel,
     workflow_id: int,
     workflow_run_id: int,
+    organization_id: int,
 ) -> None:
     quota_result = await authorize_workflow_run_start(
         workflow_id=workflow_id,
-        organization_id=user.selected_organization_id,
+        organization_id=organization_id,
         workflow_run_id=workflow_run_id,
         actor_user=user,
     )
@@ -171,9 +172,28 @@ async def create_text_chat_session(
 ) -> WorkflowRunTextSessionResponse:
     session_name = request.name or f"WR-TEXT-{uuid4().hex[:6].upper()}"
     try:
+        # The agent's own organization is the tenant for everything that
+        # follows. An operator may stand in a different business while
+        # testing an agent they created or are assigned to — stamping the
+        # run with the SELECTED org would mis-tenant the run and make the
+        # quota check look up the agent in the wrong tenant ("Workflow not
+        # found"). Access was already granted: the editor opened this agent.
         workflow = await db_client.get_workflow(
             workflow_id, organization_id=user.selected_organization_id
         )
+        if workflow is None:
+            fallback = await db_client.get_workflow_by_id(workflow_id)
+            if fallback is not None and fallback.organization_id is not None:
+                from api.services.agency_access import is_agency_owner
+
+                granted = is_agency_owner(user)
+                if not granted:
+                    user_orgs = await db_client.get_organizations_for_user(user.id)
+                    granted = any(
+                        o.id == fallback.organization_id for o in user_orgs
+                    )
+                if granted:
+                    workflow = fallback
         if not workflow:
             raise ValueError(f"Workflow with ID {workflow_id} not found")
         run_inputs = await prepare_workflow_run_inputs(
@@ -189,14 +209,16 @@ async def create_text_chat_session(
             mode=WorkflowRunMode.TEXTCHAT.value,
             user_id=user.id,
             initial_context=run_inputs.initial_context,
-            organization_id=user.selected_organization_id,
+            organization_id=workflow.organization_id,
             definition_id=run_inputs.definition_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
     set_current_run_id(workflow_run.id)
-    await _ensure_text_chat_quota(user, workflow_id, workflow_run.id)
+    await _ensure_text_chat_quota(
+        user, workflow_id, workflow_run.id, workflow.organization_id
+    )
 
     annotations = {
         "tester": {
@@ -262,7 +284,9 @@ async def append_text_chat_message(
         == "completed"
     ):
         raise HTTPException(status_code=400, detail="Text chat session has ended")
-    await _ensure_text_chat_quota(user, workflow_id, run_id)
+    await _ensure_text_chat_quota(
+        user, workflow_id, run_id, text_session.workflow_run.organization_id
+    )
 
     try:
         text_session = await append_text_chat_user_message(

@@ -25,6 +25,10 @@ class UserResponse(BaseModel):
     name: str | None = None
     organization_id: int | None = None
     provider_id: str | None = None
+    # Agency-level role: 'owner' (full cross-organization access) or 'staff'
+    # (sees only businesses assigned to them on the agency surface). Default
+    # 'staff' so an older client that ignores the field stays correct.
+    agency_role: str = "staff"
 
 
 class AuthResponse(BaseModel):

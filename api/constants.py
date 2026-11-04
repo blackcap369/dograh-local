@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from api.enums import Environment
@@ -69,6 +70,24 @@ CORS_ALLOWED_ORIGINS = [
 ]
 AUTH_PROVIDER = os.getenv("AUTH_PROVIDER", "local")
 ENABLE_SIGNUP = os.getenv("ENABLE_SIGNUP", "true").lower() == "true"
+# The agency owners, by login email, comma-separated. Lives only in this env
+# file -- it is the secret that decides who the agency belongs to. A user
+# signing up or logging in with one of these emails is promoted to the owner
+# role (users.agency_role = 'owner') at auth time; promotion is one-way, so
+# removing an email here later does not silently demote an existing owner.
+# How long a trashed (soft-deleted) business stays restorable before the
+# nightly purge may hard-delete it -- and only if it passes the impact guard.
+# Businesses with work history are never purged by the timer at all.
+# Failed-run health window (V2.6): the run-health view counts failures in
+# the trailing window; alerting is per-failure, debounced per agent.
+FAILURE_WINDOW_HOURS = int(os.getenv("FAILURE_WINDOW_HOURS", "24"))
+TRASH_RETENTION_DAYS = int(os.getenv("TRASH_RETENTION_DAYS", "10"))
+TRASH_RETENTION = timedelta(days=TRASH_RETENTION_DAYS)
+OWNER_EMAILS = {
+    e.strip().lower()
+    for e in os.getenv("OWNER_EMAILS", "").split(",")
+    if e.strip()
+}
 # Stack Auth public client config. These are safe to expose to the browser (the
 # publishable client key is public by design, and the project id is non-sensitive),
 # and are served to the UI at runtime via /api/v1/health so the frontend no longer

@@ -11,6 +11,12 @@ export function detailFromError(err: unknown, fallback = "Request failed"): stri
     if (typeof err === "string") return err;
     const e = err as { detail?: unknown };
     if (typeof e?.detail === "string") return e.detail;
+    // Object detail: the agency routes refuse destructive actions with
+    // `{ message, ...counts }` so the refusal explains itself.
+    if (e?.detail && typeof e.detail === "object" && !Array.isArray(e.detail)) {
+        const message = (e.detail as { message?: unknown }).message;
+        if (typeof message === "string" && message) return message;
+    }
     if (Array.isArray(e?.detail) && e.detail.length > 0) {
         const messages = e.detail
             .map((item) => {
