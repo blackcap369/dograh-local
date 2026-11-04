@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
 
   cookieStore.set(OSS_TOKEN_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: request.headers.get('x-forwarded-proto')?.split(',')[0].trim() === 'https' || request.nextUrl.protocol === 'https:',
     sameSite: 'lax',
     maxAge: 60 * 60 * 24 * 30,
     path: '/',
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
 
   cookieStore.set(OSS_USER_COOKIE, JSON.stringify(user), {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: request.headers.get('x-forwarded-proto')?.split(',')[0].trim() === 'https' || request.nextUrl.protocol === 'https:',
     sameSite: 'lax',
     maxAge: 60 * 60 * 24 * 30,
     path: '/',
